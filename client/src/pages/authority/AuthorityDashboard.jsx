@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import {
   ClipboardList,
   AlertOctagon,
@@ -9,11 +10,14 @@ import {
   User,
   ShieldCheck,
   CheckCircle2,
-  Info
+  Info,
+  ArrowRight,
+  ExternalLink
 } from 'lucide-react';
 import AuthorityHeader from '../../components/authority/AuthorityHeader';
 import DepartmentMetrics from '../../components/authority/DepartmentMetrics';
 import StatusBadge from '../../components/StatusBadge';
+import Button from '../../components/Button';
 import {
   calculateDepartmentMetrics,
   getRecentDepartmentComplaints
@@ -32,15 +36,30 @@ const SEVERITY_STYLES = {
  */
 export const AuthorityDashboard = () => {
   const [selectedDepartment, setSelectedDepartment] = useState('All Departments');
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  // Sync with local authority updates
+  useEffect(() => {
+    const handleStateChange = () => {
+      setRefreshTick((prev) => prev + 1);
+    };
+
+    window.addEventListener('authority-state-change', handleStateChange);
+    window.addEventListener('storage', handleStateChange);
+    return () => {
+      window.removeEventListener('authority-state-change', handleStateChange);
+      window.removeEventListener('storage', handleStateChange);
+    };
+  }, []);
 
   // Reactive metrics and complaints calculation based on selected department
   const metrics = useMemo(() => {
     return calculateDepartmentMetrics(selectedDepartment);
-  }, [selectedDepartment]);
+  }, [selectedDepartment, refreshTick]);
 
   const recentComplaints = useMemo(() => {
     return getRecentDepartmentComplaints(selectedDepartment, 8);
-  }, [selectedDepartment]);
+  }, [selectedDepartment, refreshTick]);
 
   return (
     <div className="space-y-6">
@@ -78,9 +97,22 @@ export const AuthorityDashboard = () => {
               </div>
             </div>
 
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 self-start sm:self-auto">
-              Showing {recentComplaints.length} Records
-            </span>
+            <div className="flex items-center gap-2.5 self-start sm:self-auto">
+              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                {recentComplaints.length} Records
+              </span>
+              <Link to="/authority/complaints">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  icon={ArrowRight}
+                  iconPosition="right"
+                  className="text-xs py-1.5"
+                >
+                  Manage All
+                </Button>
+              </Link>
+            </div>
           </div>
 
           {/* Complaints List / Cards */}
@@ -97,14 +129,18 @@ export const AuthorityDashboard = () => {
               recentComplaints.map((item) => (
                 <article
                   key={item.id}
-                  className="p-5 hover:bg-slate-50/70 transition-colors space-y-3"
+                  className="p-5 hover:bg-slate-50/70 transition-colors space-y-3 group"
                 >
                   {/* Top metadata line */}
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-bold text-civic-700 bg-civic-50 px-2 py-0.5 rounded border border-civic-200">
-                        {item.id}
-                      </span>
+                      <Link
+                        to={`/authority/complaints/${item.id}`}
+                        className="font-mono text-xs font-bold text-civic-700 bg-civic-50 px-2 py-0.5 rounded border border-civic-200 hover:bg-civic-100 transition-colors flex items-center gap-1"
+                      >
+                        <span>{item.id}</span>
+                        <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </Link>
                       <span className="text-xs font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
                         {item.department}
                       </span>
@@ -130,9 +166,12 @@ export const AuthorityDashboard = () => {
 
                   {/* Complaint Title & Description */}
                   <div>
-                    <h3 className="text-sm font-bold text-slate-900 leading-snug">
+                    <Link
+                      to={`/authority/complaints/${item.id}`}
+                      className="text-sm font-bold text-slate-900 leading-snug hover:text-civic-700 transition-colors block"
+                    >
                       {item.title}
-                    </h3>
+                    </Link>
                     <p className="text-xs text-slate-500 line-clamp-2 mt-1 leading-relaxed">
                       {item.description}
                     </p>
@@ -201,6 +240,14 @@ export const AuthorityDashboard = () => {
                 </span>
               </div>
             </div>
+
+            <div className="pt-2 border-t border-slate-100">
+              <Link to="/authority/complaints">
+                <Button size="sm" variant="primary" icon={ArrowRight} iconPosition="right" className="w-full text-xs">
+                  Open Complaints Queue
+                </Button>
+              </Link>
+            </div>
           </div>
 
           {/* Standard Operating Notice */}
@@ -231,10 +278,10 @@ export const AuthorityDashboard = () => {
           <div className="p-4 rounded-xl bg-civic-50/80 border border-civic-200 text-xs text-civic-900 space-y-1">
             <div className="flex items-center gap-1.5 font-bold text-civic-800">
               <CheckCircle2 className="w-4 h-4 text-civic-600" />
-              <span>Commit 1: Foundation Active</span>
+              <span>Commit 2: Workflow Active</span>
             </div>
             <p className="text-[11px] text-slate-600 leading-normal">
-              Authority layout, department filters, and operational metrics initialized. Subsequent commits will introduce status transition modals, officer dispatch workflows, and AI triage inspection.
+              Complaints management table, detail views, AI triage diagnostic drawer, and status assignment modals are now operational.
             </p>
           </div>
         </aside>

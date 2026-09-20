@@ -5,6 +5,9 @@ import Home from '../pages/Home';
 import CitizenDashboard from '../pages/CitizenDashboard';
 import ReportIssue from '../pages/ReportIssue';
 import TrackIssue from '../pages/TrackIssue';
+import AuthorityDashboard from '../pages/authority/AuthorityDashboard';
+import AuthorityComplaints from '../pages/authority/AuthorityComplaints';
+import AuthorityComplaintDetails from '../pages/authority/AuthorityComplaintDetails';
 
 export const AppRoutes = () => {
   return (
@@ -14,6 +17,9 @@ export const AppRoutes = () => {
         <Route path="/dashboard" element={<CitizenDashboard />} />
         <Route path="/report" element={<ReportIssue />} />
         <Route path="/track" element={<TrackIssue />} />
+        <Route path="/authority" element={<AuthorityDashboard />} />
+        <Route path="/authority/complaints" element={<AuthorityComplaints />} />
+        <Route path="/authority/complaints/:id" element={<AuthorityComplaintDetails />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
