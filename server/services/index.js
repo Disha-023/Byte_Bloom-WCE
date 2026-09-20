@@ -1,2 +1,4 @@
-// Placeholder for future business services (Issue management, AI triage, Notification services)
-export default {};
+import complaintService from './complaintService.js';
+
+export { complaintService };
+export default { complaintService };

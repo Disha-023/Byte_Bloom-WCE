@@ -20,6 +20,8 @@ import FormField from '../components/FormField';
 import SeveritySelector from '../components/SeveritySelector';
 import ImageUpload from '../components/ImageUpload';
 
+import { createComplaint } from '../services/complaintApi';
+
 const CATEGORIES = [
   'Road & Potholes',
   'Garbage & Waste',
@@ -50,6 +52,9 @@ export const ReportIssue = () => {
   const [formData, setFormData] = useState(INITIAL_FORM_STATE);
   const [errors, setErrors] = useState({});
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState(null);
+  const [submittedComplaint, setSubmittedComplaint] = useState(null);
 
   // Field change handlers
   const handleInputChange = (field, value) => {
@@ -62,9 +67,12 @@ export const ReportIssue = () => {
         return next;
       });
     }
+    if (submissionError) {
+      setSubmissionError(null);
+    }
   };
 
-  // Mock Geolocation Handler (Strictly Mock demonstration, no browser API)
+  // Mock Geolocation Handler (Preserved demo coordinates; real browser geolocation will be integrated separately)
   const handleUseMyLocation = () => {
     const mockCoords = '16.8524, 74.5815';
     setFormData((prev) => ({
@@ -109,8 +117,8 @@ export const ReportIssue = () => {
 
     if (!formData.title.trim()) {
       newErrors.title = 'Please enter an issue title.';
-    } else if (formData.title.trim().length < 5) {
-      newErrors.title = 'Title should be at least 5 characters long.';
+    } else if (formData.title.trim().length < 3) {
+      newErrors.title = 'Title should be at least 3 characters long.';
     }
 
     if (!formData.description.trim()) {
@@ -131,12 +139,50 @@ export const ReportIssue = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  // Submission (Frontend demonstration only)
-  const handleSubmit = (e) => {
+  // Real backend submission flow
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (validateForm()) {
-      setIsSubmitted(true);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (!validateForm()) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSubmissionError(null);
+
+    try {
+      const data = new FormData();
+      data.append('title', formData.title);
+      data.append('description', formData.description);
+      data.append('category', formData.category);
+      data.append('severity', formData.severity);
+      data.append('address', formData.address);
+
+      if (formData.additionalLocation) {
+        data.append('additionalLocation', formData.additionalLocation);
+      }
+      if (formData.mockCoordinates) {
+        data.append('mockCoordinates', formData.mockCoordinates);
+      }
+      if (formData.imageFile) {
+        data.append('image', formData.imageFile);
+      }
+
+      const response = await createComplaint(data);
+
+      if (response && response.complaint) {
+        setSubmittedComplaint(response.complaint);
+        setIsSubmitted(true);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        throw new Error('Unexpected response structure from server.');
+      }
+    } catch (err) {
+      console.error('Complaint submission failed:', err);
+      setSubmissionError(
+        err.message || 'Failed to submit complaint. Please check your network connection and try again.'
+      );
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -148,55 +194,161 @@ export const ReportIssue = () => {
     setFormData(INITIAL_FORM_STATE);
     setErrors({});
     setIsSubmitted(false);
+    setIsSubmitting(false);
+    setSubmissionError(null);
+    setSubmittedComplaint(null);
   };
 
-  // If submitted successfully (Frontend-only Success View)
-  if (isSubmitted) {
+  // Submitted successfully - Real AI Triage and Complaint Details View
+  if (isSubmitted && submittedComplaint) {
+    const isAiAvailable = submittedComplaint.ai_analysis_status === 'completed';
+
     return (
-      <div className="max-w-2xl mx-auto py-6 space-y-6">
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 text-center space-y-6">
-          <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto shadow-sm">
-            <CheckCircle2 className="w-9 h-9" />
-          </div>
+      <div className="max-w-3xl mx-auto py-6 space-y-6">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 space-y-6">
+          <div className="text-center space-y-3">
+            <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto shadow-sm">
+              <CheckCircle2 className="w-9 h-9" />
+            </div>
 
-          <div className="space-y-2">
             <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">
-              Issue Report Ready
+              Complaint Submitted Successfully
             </h1>
-            <p className="text-sm text-slate-600 max-w-md mx-auto leading-relaxed">
-              Your issue has been prepared successfully. Backend submission will be connected in a later phase.
+
+            <p className="text-sm text-slate-600 max-w-lg mx-auto leading-relaxed">
+              {isAiAvailable
+                ? 'Your complaint was submitted successfully and is now being analyzed by the civic AI system.'
+                : 'Complaint submitted, but AI analysis is temporarily unavailable. It has been routed for manual inspection.'}
             </p>
+
+            {/* Prominent Complaint ID Badge */}
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-slate-100 border border-slate-200 text-slate-800 text-sm font-mono font-bold tracking-wide">
+              <span>Complaint ID:</span>
+              <span className="text-civic-700">{submittedComplaint.complaint_id}</span>
+            </div>
           </div>
 
-          {/* Prepared Issue Summary Preview */}
+          {/* AI Intelligence Assessment Card */}
+          <div className="bg-gradient-to-br from-civic-50/70 to-slate-50 border border-civic-200 rounded-xl p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-civic-200/60 pb-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-civic-600" />
+                <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+                  AI Triage & Classification
+                </h2>
+              </div>
+              <span
+                className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                  isAiAvailable
+                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                    : 'bg-amber-100 text-amber-800 border border-amber-200'
+                }`}
+              >
+                {isAiAvailable ? 'AI Verified' : 'AI Pending'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+              <div>
+                <span className="text-slate-500 font-medium">Issue Type:</span>
+                <p className="text-slate-900 font-bold capitalize mt-0.5">
+                  {submittedComplaint.issue_type || submittedComplaint.category}
+                </p>
+              </div>
+
+              <div>
+                <span className="text-slate-500 font-medium">AI Severity:</span>
+                <p className="text-slate-900 font-bold capitalize mt-0.5">
+                  {submittedComplaint.ai_severity || 'Under Assessment'}
+                </p>
+              </div>
+
+              <div>
+                <span className="text-slate-500 font-medium">Priority:</span>
+                <p className="text-slate-900 font-bold capitalize mt-0.5">
+                  {submittedComplaint.priority || 'Normal'}
+                </p>
+              </div>
+
+              <div>
+                <span className="text-slate-500 font-medium">Target SLA:</span>
+                <p className="text-slate-900 font-bold mt-0.5">
+                  {submittedComplaint.sla_hours ? `${submittedComplaint.sla_hours} Hours` : 'Pending'}
+                </p>
+              </div>
+
+              <div className="col-span-2">
+                <span className="text-slate-500 font-medium">Assigned Department:</span>
+                <p className="text-slate-900 font-bold capitalize mt-0.5">
+                  {submittedComplaint.department
+                    ? submittedComplaint.department.replace(/_/g, ' ')
+                    : 'Pending Assignment'}
+                </p>
+              </div>
+
+              <div>
+                <span className="text-slate-500 font-medium">AI Confidence:</span>
+                <p className="text-slate-900 font-bold mt-0.5">
+                  {submittedComplaint.ai_confidence
+                    ? `${Math.round(Number(submittedComplaint.ai_confidence) * 100)}%`
+                    : 'N/A'}
+                </p>
+              </div>
+
+              <div>
+                <span className="text-slate-500 font-medium">Evidence Analysis:</span>
+                <p className="text-slate-900 font-bold mt-0.5">
+                  {submittedComplaint.image_analyzed ? 'Visual Verified' : 'Text Based'}
+                </p>
+              </div>
+
+              {submittedComplaint.evidence_summary && (
+                <div className="col-span-2 sm:col-span-4 bg-white/80 p-3 rounded-lg border border-civic-100 text-slate-700">
+                  <span className="text-slate-500 font-medium block text-[11px] mb-1">
+                    AI Evidence Summary:
+                  </span>
+                  <p className="text-xs leading-relaxed">{submittedComplaint.evidence_summary}</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Submitted Complaint Details */}
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 text-left space-y-3">
             <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-              Prepared Issue Details
+              Submitted Complaint Details
             </h2>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               <div>
                 <span className="text-slate-500 font-medium">Category:</span>
-                <p className="text-slate-900 font-semibold mt-0.5">{formData.category}</p>
+                <p className="text-slate-900 font-semibold mt-0.5">{submittedComplaint.category}</p>
               </div>
 
               <div>
-                <span className="text-slate-500 font-medium">Severity:</span>
-                <p className="text-slate-900 font-semibold mt-0.5">{formData.severity}</p>
+                <span className="text-slate-500 font-medium">Citizen Reported Severity:</span>
+                <p className="text-slate-900 font-semibold capitalize mt-0.5">
+                  {submittedComplaint.citizen_severity}
+                </p>
               </div>
 
               <div className="sm:col-span-2">
                 <span className="text-slate-500 font-medium">Title:</span>
-                <p className="text-slate-900 font-semibold mt-0.5">{formData.title}</p>
+                <p className="text-slate-900 font-semibold mt-0.5">{submittedComplaint.title}</p>
+              </div>
+
+              <div className="sm:col-span-2">
+                <span className="text-slate-500 font-medium">Description:</span>
+                <p className="text-slate-800 mt-0.5 leading-relaxed">{submittedComplaint.description}</p>
               </div>
 
               <div className="sm:col-span-2">
                 <span className="text-slate-500 font-medium">Location:</span>
                 <p className="text-slate-900 font-semibold mt-0.5">
-                  {formData.address}
-                  {formData.mockCoordinates && (
+                  {submittedComplaint.address}
+                  {submittedComplaint.latitude && submittedComplaint.longitude && (
                     <span className="ml-1.5 text-civic-600 font-normal">
-                      ({formData.mockCoordinates} - Mock GPS)
+                      ({submittedComplaint.latitude}, {submittedComplaint.longitude})
                     </span>
                   )}
                 </p>
@@ -204,7 +356,7 @@ export const ReportIssue = () => {
 
               {formData.imagePreview && (
                 <div className="sm:col-span-2 pt-2">
-                  <span className="text-slate-500 font-medium block mb-1.5">Attached Image Preview:</span>
+                  <span className="text-slate-500 font-medium block mb-1.5">Attached Image:</span>
                   <img
                     src={formData.imagePreview}
                     alt="Evidence Preview"
@@ -547,22 +699,47 @@ export const ReportIssue = () => {
                   </div>
                 )}
 
+                {/* Submission Error alert if API fails */}
+                {submissionError && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg space-y-1">
+                    <p className="font-semibold text-rose-800 flex items-center gap-1.5 text-xs">
+                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                      <span>Submission Error</span>
+                    </p>
+                    <p className="text-rose-700 text-[11px] leading-relaxed">
+                      {submissionError}
+                    </p>
+                  </div>
+                )}
+
                 {/* Submit and Cancel Actions */}
                 <div className="space-y-2 pt-2">
                   <Button
                     type="submit"
                     variant="primary"
                     size="lg"
-                    icon={Send}
-                    className="w-full shadow-md"
+                    icon={isSubmitting ? undefined : Send}
+                    disabled={isSubmitting}
+                    className="w-full shadow-md disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    Submit Issue
+                    {isSubmitting ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                        </svg>
+                        <span>Submitting complaint...</span>
+                      </span>
+                    ) : (
+                      'Submit Issue'
+                    )}
                   </Button>
 
                   <Button
                     type="button"
                     variant="ghost"
                     size="md"
+                    disabled={isSubmitting}
                     onClick={() => navigate('/')}
                     className="w-full text-slate-500 hover:text-slate-800"
                   >
@@ -572,7 +749,7 @@ export const ReportIssue = () => {
 
                 <div className="pt-2 text-center">
                   <p className="text-[10px] text-slate-400 leading-tight">
-                    Phase 2 Client Demo: Form actions demonstrate full interactive UX without sending data to backend.
+                    Submitted complaints are authenticated and analyzed automatically by the civic triage engine.
                   </p>
                 </div>
               </div>

@@ -1,16 +1,43 @@
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { config } from './config/index.js';
+import { initDb } from './config/db.js';
 import healthRoutes from './routes/healthRoutes.js';
+import complaintRoutes from './routes/complaintRoutes.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 
-// Middleware
-app.use(cors());
+// CORS configuration supporting development Vite client
+const allowedOrigins = [
+  config.clientUrl,
+  'http://localhost:5173',
+  'http://127.0.0.1:5173'
+];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin) || config.nodeEnv === 'development') {
+      return callback(null, true);
+    }
+    return callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true
+}));
+
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Serve uploaded complaint images statically
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // API Routes
 app.use('/api', healthRoutes);
+app.use('/api/complaints', complaintRoutes);
 
 // Root route
 app.get('/', (req, res) => {
@@ -19,7 +46,8 @@ app.get('/', (req, res) => {
     version: '1.0.0',
     status: 'online',
     endpoints: {
-      health: '/api/health'
+      health: '/api/health',
+      complaints: '/api/complaints'
     }
   });
 });
@@ -35,16 +63,29 @@ app.use((req, res) => {
 // Global error handler
 app.use((err, req, res, next) => {
   console.error('Server error:', err);
-  res.status(500).json({
+  res.status(err.status || 500).json({
     status: 'error',
-    message: 'Internal server error'
+    message: err.message || 'Internal server error'
   });
 });
 
-// Start server
-app.listen(config.port, () => {
-  console.log(`[Smart Civic Server] Server running in ${config.nodeEnv} mode on port ${config.port}`);
-  console.log(`[Smart Civic Server] Health check available at: http://localhost:${config.port}/api/health`);
-});
+// Initialize database schema and start server when not in test mode
+const isTestEnv =
+  process.env.NODE_ENV === 'test' ||
+  Boolean(process.env.NODE_TEST_CONTEXT) ||
+  Boolean(process.env.NODE_TEST) ||
+  process.argv.some((arg) => arg.includes('test'));
+
+if (!isTestEnv) {
+  initDb().catch((err) => {
+    console.warn('[PostgreSQL] Could not initialize database schema at startup:', err.message);
+  });
+
+  app.listen(config.port, () => {
+    console.log(`[Smart Civic Server] Server running in ${config.nodeEnv} mode on port ${config.port}`);
+    console.log(`[Smart Civic Server] Health check: http://localhost:${config.port}/api/health`);
+    console.log(`[Smart Civic Server] Complaints API: http://localhost:${config.port}/api/complaints`);
+  });
+}
 
 export default app;

@@ -1,2 +1,4 @@
-// Placeholder for data models (Issue, Citizen, Department, ResolutionLog)
-export default {};
+import complaintModel from './complaintModel.js';
+
+export { complaintModel };
+export default { complaintModel };
