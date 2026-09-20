@@ -126,7 +126,7 @@ Smart Civic Issue Resolution Agent/
 
 ## End-to-End Civic Complaint & AI Triage Architecture
 
-The platform provides an integrated, end-to-end pipeline connecting citizen reporting to municipal AI triage and PostgreSQL persistence:
+The platform provides an integrated, end-to-end pipeline connecting citizen reporting to municipal AI triage, PostgreSQL persistence, and the Authority Dashboard:
 
 ```text
 Citizen clicks "Use My Location" (Browser navigator.geolocation)
@@ -141,10 +141,23 @@ FastAPI AI Engine (ai_engine/main.py)
       ↓ (Evaluates triage with structured location context, returns issue_type, severity, priority, department, sla_hours)
 Persist AI Analysis in PostgreSQL (ai_analysis_status: 'completed')
       ↓
-Return Complete Structured Complaint Record to React
-      ↓
-React Displays Real Submitted Complaint (Address, Coordinates, GPS Source) & AI Triage Results
+Authority Dashboard & Department Operations
+      ↓ (GET /api/complaints, GET /api/complaints/:complaintId)
+Live Complaints Queue, Detail Inspection, Evidence & GPS Review, and Real-time Analytics
 ```
+
+---
+
+## Authority Operations Dashboard Integration
+
+The Authority Dashboard is connected directly to the central backend API:
+
+- **Operations Overview (`/authority`)**: Displays live departmental KPIs and recent complaints retrieved from `GET /api/complaints`.
+- **Complaints Queue (`/authority/complaints`)**: Multi-field searchable and filterable queue backed by `GET /api/complaints`. Shows genuine empty states when no complaints exist (no mock data injected).
+- **Complaint Details (`/authority/complaints/:id`)**: Retrieves the exact persisted record via `GET /api/complaints/:complaintId`, displaying real complaint ID, description, address, GPS coordinates, uploaded evidence photo, AI triage diagnostics, SLA limit, and audit timeline.
+- **Operational Analytics (`/authority/analytics`)**: Computes total complaints, pending/in-progress/resolved/escalated counts, resolution rates, issue type distributions, severity breakdowns, and department workloads dynamically from live database records.
+- **Authority Mutation Scope**: The central backend currently supports complaint creation and read operations (`POST /api/complaints`, `GET /api/complaints`, `GET /api/complaints/:complaintId`). Authority actions (assigning officers, status updates, notes) are updated for the active session and will persist to PostgreSQL once backend mutation endpoints are provided.
+
 
 ---
 

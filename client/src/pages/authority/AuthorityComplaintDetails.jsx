@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -17,15 +17,15 @@ import {
   CheckCircle2,
   HelpCircle,
   FileQuestion,
-  UserCheck
+  UserCheck,
+  Timer,
+  AlertCircle,
+  RotateCcw
 } from 'lucide-react';
 import Button from '../../components/Button';
 import IssueActionModal from '../../components/authority/IssueActionModal';
 import AITriageDetailsDrawer from '../../components/authority/AITriageDetailsDrawer';
-import {
-  getAuthorityComplaintById,
-  getStoredAuthorityComplaints
-} from '../../utils/authorityState';
+import { getAuthorityComplaintById } from '../../services/authorityApi';
 
 const STATUS_BADGE_STYLES = {
   'Pending': 'bg-amber-50 text-amber-700 border-amber-200',
@@ -53,30 +53,82 @@ const TIMELINE_ICON_MAP = {
 /**
  * AuthorityComplaintDetails Page Component
  * Complete operational inspection view for a single civic grievance.
+ * Consumes real complaint data from GET /api/complaints/:complaintId.
  */
 export const AuthorityComplaintDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  const [complaint, setComplaint] = useState(() => getAuthorityComplaintById(id));
+  const [complaint, setComplaint] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [isActionModalOpen, setIsActionModalOpen] = useState(false);
   const [isAIDrawerOpen, setIsAIDrawerOpen] = useState(false);
 
-  // Reload when ID changes or custom event fires
-  useEffect(() => {
-    const refreshData = () => {
-      setComplaint(getAuthorityComplaintById(id));
-    };
-
-    refreshData();
-    window.addEventListener('authority-state-change', refreshData);
-    window.addEventListener('storage', refreshData);
-    return () => {
-      window.removeEventListener('authority-state-change', refreshData);
-      window.removeEventListener('storage', refreshData);
-    };
+  const fetchComplaint = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await getAuthorityComplaintById(id);
+      setComplaint(data);
+    } catch (err) {
+      console.error(`Failed to load complaint ${id}:`, err);
+      setError(err.message || 'Unable to retrieve complaint details from backend.');
+    } finally {
+      setIsLoading(false);
+    }
   }, [id]);
 
+  useEffect(() => {
+    fetchComplaint();
+
+    const handleStateChange = () => {
+      fetchComplaint();
+    };
+
+    window.addEventListener('authority-state-change', handleStateChange);
+    return () => {
+      window.removeEventListener('authority-state-change', handleStateChange);
+    };
+  }, [fetchComplaint]);
+
+  // Loading State
+  if (isLoading) {
+    return (
+      <div className="bg-white rounded-xl border border-slate-200 p-12 text-center space-y-4 max-w-lg mx-auto my-8 shadow-sm">
+        <div className="w-8 h-8 border-2 border-civic-600 border-t-transparent rounded-full animate-spin mx-auto" />
+        <h2 className="text-base font-bold text-slate-800">Loading Complaint Record...</h2>
+        <p className="text-xs text-slate-500">
+          Retrieving <strong className="font-mono">{id}</strong> from central municipal backend.
+        </p>
+      </div>
+    );
+  }
+
+  // Error State
+  if (error) {
+    return (
+      <div className="bg-white rounded-xl border border-rose-200 p-8 text-center space-y-4 max-w-lg mx-auto my-8 shadow-sm">
+        <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto border border-rose-200">
+          <AlertCircle className="w-6 h-6" />
+        </div>
+        <h2 className="text-base font-bold text-slate-800">Error Loading Complaint</h2>
+        <p className="text-xs text-slate-500">{error}</p>
+        <div className="flex items-center justify-center gap-2 pt-2">
+          <Button size="sm" variant="outline" onClick={fetchComplaint} icon={RotateCcw} className="text-xs">
+            Retry
+          </Button>
+          <Link to="/authority/complaints">
+            <Button size="sm" variant="secondary" icon={ArrowLeft} className="text-xs">
+              Back to List
+            </Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // Not Found State
   if (!complaint) {
     return (
       <div className="bg-white rounded-xl border border-slate-200 p-12 text-center space-y-4 max-w-lg mx-auto my-8 shadow-sm">
@@ -87,7 +139,7 @@ export const AuthorityComplaintDetails = () => {
           Complaint Record Not Found
         </h2>
         <p className="text-xs text-slate-500">
-          No authority complaint found matching ID <strong className="font-mono">{id}</strong>.
+          No authority complaint found matching ID <strong className="font-mono">{id}</strong> in the central database.
         </p>
         <Link to="/authority/complaints">
           <Button size="sm" variant="primary" icon={ArrowLeft}>
@@ -201,7 +253,7 @@ export const AuthorityComplaintDetails = () => {
                 </div>
                 <p className="font-semibold text-slate-800">{complaint.location}</p>
                 {complaint.coordinates && (
-                  <p className="text-[11px] text-slate-400 font-mono">GPS: {complaint.coordinates}</p>
+                  <p className="text-[11px] text-slate-500 font-mono">GPS: {complaint.coordinates}</p>
                 )}
               </div>
 
@@ -226,7 +278,7 @@ export const AuthorityComplaintDetails = () => {
             </div>
           </div>
 
-          {/* Section: SLA Telemetry & Escalation State (Member 4 Integration Placeholder) */}
+          {/* Section: SLA Telemetry & Escalation State */}
           <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-3">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
@@ -236,7 +288,7 @@ export const AuthorityComplaintDetails = () => {
                 </h3>
               </div>
               <span className="text-[10px] font-mono font-semibold bg-slate-100 text-slate-700 px-2 py-0.5 rounded border border-slate-200">
-                Member 4 Hook Ready
+                Live Telemetry
               </span>
             </div>
 
@@ -260,9 +312,9 @@ export const AuthorityComplaintDetails = () => {
                 <p className="font-mono font-bold text-slate-900">
                   {complaint.status === 'Resolved'
                     ? 'Completed (0h)'
-                    : complaint.slaHoursRemaining !== undefined
+                    : complaint.slaHoursRemaining !== null && complaint.slaHoursRemaining !== undefined
                     ? `${complaint.slaHoursRemaining}h remaining`
-                    : '18h remaining'}
+                    : complaint.slaHours ? `${complaint.slaHours}h SLA` : 'Standard SLA'}
                 </p>
               </div>
 
@@ -282,7 +334,7 @@ export const AuthorityComplaintDetails = () => {
             </div>
           </div>
 
-          {/* Section 5: Citizen-Submitted Evidence (Clearly Distinguished) */}
+          {/* Section: Citizen-Submitted Evidence (Real Image & Remarks) */}
           <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
@@ -302,29 +354,58 @@ export const AuthorityComplaintDetails = () => {
                 <span className="text-slate-400">Reported By: </span>
                 <strong className="text-slate-800">{complaint.citizenName || 'Verified Citizen'}</strong>
               </div>
-              {complaint.citizenContact && (
-                <div className="text-slate-500 font-mono">
-                  {complaint.citizenContact}
+              {complaint.coordinates && (
+                <div className="text-slate-500 font-mono text-[11px]">
+                  GPS: {complaint.coordinates}
                 </div>
               )}
             </div>
 
-            {/* Visual Evidence Placeholder / Representation */}
-            {complaint.citizenEvidence ? (
+            {/* Visual Evidence: Render real uploaded photo if available */}
+            {complaint.citizenEvidence && complaint.citizenEvidence.hasImage && complaint.citizenEvidence.imageUrl ? (
+              <div className="space-y-3">
+                <div className="rounded-xl overflow-hidden border border-slate-200 bg-slate-900/5">
+                  <img
+                    src={complaint.citizenEvidence.imageUrl}
+                    alt="Citizen photo evidence"
+                    className="w-full max-h-80 object-cover object-center"
+                    onError={(e) => {
+                      e.target.parentElement.innerHTML = `
+                        <div class="p-8 text-center text-slate-400 space-y-2">
+                          <p class="text-xs font-semibold text-slate-600">Image file referenced (${complaint.citizenEvidence.imageUrl})</p>
+                          <p class="text-[11px] text-slate-400">${complaint.citizenEvidence.imageDescription || 'Uploaded photo evidence'}</p>
+                        </div>
+                      `;
+                    }}
+                  />
+                  <div className="p-3 bg-white border-t border-slate-100 text-xs text-slate-600">
+                    <span className="font-semibold text-slate-700">Evidence Summary: </span>
+                    <span>{complaint.citizenEvidence.imageDescription || 'Visual attachment captured at location of grievance.'}</span>
+                  </div>
+                </div>
+
+                {complaint.citizenEvidence.submittedNotes && (
+                  <div className="text-xs text-slate-600 bg-slate-50/60 p-3 rounded-lg border border-slate-100">
+                    <span className="font-semibold text-slate-700 block mb-1">Citizen Remarks / Additional Location:</span>
+                    <p className="italic leading-relaxed">"{complaint.citizenEvidence.submittedNotes}"</p>
+                  </div>
+                )}
+              </div>
+            ) : complaint.citizenEvidence ? (
               <div className="space-y-3">
                 <div className="p-4 bg-slate-50 rounded-xl border border-dashed border-slate-300 flex flex-col items-center justify-center text-center space-y-2">
                   <Camera className="w-8 h-8 text-slate-400" />
                   <div>
-                    <p className="text-xs font-semibold text-slate-700">Citizen Photo Attachment</p>
+                    <p className="text-xs font-semibold text-slate-700">No Photo Attached</p>
                     <p className="text-[11px] text-slate-500 max-w-sm mt-0.5">
-                      {complaint.citizenEvidence.imageDescription || 'Visual attachment captured at location of grievance.'}
+                      {complaint.citizenEvidence.imageDescription || 'Grievance submitted without photographic attachment.'}
                     </p>
                   </div>
                 </div>
 
                 {complaint.citizenEvidence.submittedNotes && (
                   <div className="text-xs text-slate-600 bg-slate-50/60 p-3 rounded-lg border border-slate-100">
-                    <span className="font-semibold text-slate-700 block mb-1">Citizen Remarks:</span>
+                    <span className="font-semibold text-slate-700 block mb-1">Citizen Remarks / Additional Location:</span>
                     <p className="italic leading-relaxed">"{complaint.citizenEvidence.submittedNotes}"</p>
                   </div>
                 )}
@@ -421,6 +502,15 @@ export const AuthorityComplaintDetails = () => {
                   </span>
                 </div>
 
+                {complaint.aiAnalysis.suggested_action && (
+                  <div className="flex items-center justify-between py-1 border-b border-slate-100">
+                    <span className="text-slate-500">Suggested Action:</span>
+                    <span className="font-mono font-semibold text-slate-800">
+                      {complaint.aiAnalysis.suggested_action}
+                    </span>
+                  </div>
+                )}
+
                 <div className="p-2.5 bg-indigo-50/50 rounded-lg border border-indigo-100 text-[11px] text-indigo-900 leading-relaxed">
                   <span className="font-semibold block mb-0.5">Triage Rationale:</span>
                   {complaint.aiAnalysis.reason}
@@ -437,11 +527,11 @@ export const AuthorityComplaintDetails = () => {
                 </Button>
               </div>
             ) : (
-              <p className="text-xs text-slate-400">AI triage record not found for this complaint.</p>
+              <p className="text-xs text-slate-400">AI triage analysis is pending or not available for this complaint.</p>
             )}
           </div>
 
-          {/* Section 6: Chronological Activity / Timeline */}
+          {/* Section: Chronological Activity / Timeline */}
           <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
             <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
               <Clock className="w-4 h-4 text-civic-700" />

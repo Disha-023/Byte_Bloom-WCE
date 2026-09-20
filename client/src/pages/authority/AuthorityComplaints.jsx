@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Search,
@@ -8,26 +8,30 @@ import {
   X,
   Filter,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  FileQuestion
 } from 'lucide-react';
 import Button from '../../components/Button';
 import AuthorityIssueTable from '../../components/authority/AuthorityIssueTable';
 import IssueActionModal from '../../components/authority/IssueActionModal';
+import { getAuthorityComplaints } from '../../services/authorityApi';
 import {
   DEPARTMENTS,
   STATUS_OPTIONS,
   SEVERITY_OPTIONS,
-  PRIORITY_OPTIONS,
-  getStoredAuthorityComplaints
+  PRIORITY_OPTIONS
 } from '../../utils/authorityState';
 
 /**
  * AuthorityComplaints Page Component
  * Main operational complaints management interface with search, multi-axis filtering, and table view.
+ * Consumes real complaint data from the central backend API.
  */
 export const AuthorityComplaints = () => {
-  const [complaints, setComplaints] = useState(() => getStoredAuthorityComplaints());
-  
+  const [complaints, setComplaints] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+
   // Filter States
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState('All Departments');
@@ -38,19 +42,32 @@ export const AuthorityComplaints = () => {
   // Modal State for Quick Action
   const [activeModalComplaint, setActiveModalComplaint] = useState(null);
 
-  // Subscribe to storage / custom event state changes
+  const fetchComplaints = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await getAuthorityComplaints();
+      setComplaints(data);
+    } catch (err) {
+      console.error('Failed to load complaints from backend:', err);
+      setError(err.message || 'Unable to connect to the complaint backend.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
+    fetchComplaints();
+
     const handleStateChange = () => {
-      setComplaints(getStoredAuthorityComplaints());
+      fetchComplaints();
     };
 
     window.addEventListener('authority-state-change', handleStateChange);
-    window.addEventListener('storage', handleStateChange);
     return () => {
       window.removeEventListener('authority-state-change', handleStateChange);
-      window.removeEventListener('storage', handleStateChange);
     };
-  }, []);
+  }, [fetchComplaints]);
 
   // Reactive Multi-Field Filtering
   const filteredComplaints = useMemo(() => {
@@ -58,22 +75,22 @@ export const AuthorityComplaints = () => {
       const q = searchQuery.trim().toLowerCase();
       const matchesSearch =
         !q ||
-        item.id.toLowerCase().includes(q) ||
-        item.title.toLowerCase().includes(q) ||
-        item.description.toLowerCase().includes(q) ||
-        item.location.toLowerCase().includes(q);
+        (item.id && item.id.toLowerCase().includes(q)) ||
+        (item.title && item.title.toLowerCase().includes(q)) ||
+        (item.description && item.description.toLowerCase().includes(q)) ||
+        (item.location && item.location.toLowerCase().includes(q));
 
       const matchesDept =
         selectedDepartment === 'All Departments' || item.department === selectedDepartment;
 
       const matchesStatus =
-        selectedStatus === 'All Statuses' || item.status === selectedStatus;
+        selectedStatus === 'All Statuses' || item.status.toLowerCase() === selectedStatus.toLowerCase();
 
       const matchesSeverity =
-        selectedSeverity === 'All Severities' || item.severity === selectedSeverity;
+        selectedSeverity === 'All Severities' || item.severity.toLowerCase() === selectedSeverity.toLowerCase();
 
       const matchesPriority =
-        selectedPriority === 'All Priorities' || item.priority === selectedPriority;
+        selectedPriority === 'All Priorities' || item.priority.toLowerCase() === selectedPriority.toLowerCase();
 
       return matchesSearch && matchesDept && matchesStatus && matchesSeverity && matchesPriority;
     });
@@ -119,7 +136,18 @@ export const AuthorityComplaints = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={fetchComplaints}
+            disabled={isLoading}
+            className="inline-flex items-center gap-1.5 text-xs text-slate-700 hover:text-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition-colors font-medium shadow-xs disabled:opacity-50"
+            title="Refresh complaints from backend"
+          >
+            <RotateCcw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
+
           <span className="text-xs bg-slate-100 text-slate-700 px-3 py-1.5 rounded-lg font-semibold border border-slate-200">
             Total In Scope: <strong>{filteredComplaints.length}</strong> / {complaints.length}
           </span>
@@ -136,7 +164,7 @@ export const AuthorityComplaints = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by ID (e.g. CIV-1001), keywords, location..."
+              placeholder="Search by ID (e.g. CIV-102431), keywords, location..."
               className="w-full pl-10 pr-9 py-2 text-xs sm:text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-civic-500 text-slate-800"
             />
             {searchQuery && (
@@ -233,17 +261,64 @@ export const AuthorityComplaints = () => {
             )}
           </div>
 
-          <span className="text-[11px] text-slate-400">
-            Isolated Authority State Layer (Client Demo)
+          <span className="text-[11px] text-emerald-700 font-medium flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            <span>Central API Source (GET /api/complaints)</span>
           </span>
         </div>
       </div>
 
+      {/* Loading State */}
+      {isLoading && (
+        <div className="bg-white rounded-xl border border-slate-200 p-12 text-center space-y-3 shadow-sm">
+          <div className="w-8 h-8 border-2 border-civic-600 border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-xs text-slate-500 font-medium">Fetching real complaints from central backend...</p>
+        </div>
+      )}
+
+      {/* Error State */}
+      {!isLoading && error && (
+        <div className="bg-white rounded-xl border border-rose-200 p-8 text-center space-y-3 shadow-sm">
+          <div className="w-10 h-10 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto border border-rose-200">
+            <AlertCircle className="w-5 h-5" />
+          </div>
+          <h3 className="text-sm font-bold text-slate-800">Backend Connection Error</h3>
+          <p className="text-xs text-slate-500 max-w-md mx-auto">{error}</p>
+          <Button size="sm" variant="outline" onClick={fetchComplaints} icon={RotateCcw} className="text-xs">
+            Retry Connection
+          </Button>
+        </div>
+      )}
+
+      {/* Empty Database State */}
+      {!isLoading && !error && complaints.length === 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 p-12 text-center space-y-3 shadow-sm">
+          <div className="w-12 h-12 rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+            <FileQuestion className="w-6 h-6" />
+          </div>
+          <h3 className="text-sm font-bold text-slate-800">
+            No complaints found in database
+          </h3>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto">
+            The central complaint database is currently empty. When citizens submit complaints via the citizen portal, they will automatically appear here.
+          </p>
+          <div className="pt-2">
+            <Link to="/report">
+              <Button size="sm" variant="primary" className="text-xs">
+                Submit a Citizen Complaint
+              </Button>
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Main Table */}
-      <AuthorityIssueTable
-        complaints={filteredComplaints}
-        onOpenActionModal={(complaint) => setActiveModalComplaint(complaint)}
-      />
+      {!isLoading && !error && complaints.length > 0 && (
+        <AuthorityIssueTable
+          complaints={filteredComplaints}
+          onOpenActionModal={(complaint) => setActiveModalComplaint(complaint)}
+        />
+      )}
 
       {/* Quick Action Modal */}
       <IssueActionModal
@@ -251,7 +326,7 @@ export const AuthorityComplaints = () => {
         complaint={activeModalComplaint}
         onClose={() => setActiveModalComplaint(null)}
         onSuccess={() => {
-          setComplaints(getStoredAuthorityComplaints());
+          fetchComplaints();
           setActiveModalComplaint(null);
         }}
       />

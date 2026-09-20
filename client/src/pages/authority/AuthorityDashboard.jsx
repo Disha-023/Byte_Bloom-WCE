@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ClipboardList,
@@ -12,16 +12,15 @@ import {
   CheckCircle2,
   Info,
   ArrowRight,
-  ExternalLink
+  ExternalLink,
+  RotateCcw,
+  AlertCircle
 } from 'lucide-react';
 import AuthorityHeader from '../../components/authority/AuthorityHeader';
 import DepartmentMetrics from '../../components/authority/DepartmentMetrics';
 import StatusBadge from '../../components/StatusBadge';
 import Button from '../../components/Button';
-import {
-  calculateDepartmentMetrics,
-  getRecentDepartmentComplaints
-} from '../../utils/authorityState';
+import { getAuthorityComplaints } from '../../services/authorityApi';
 
 const SEVERITY_STYLES = {
   Low: 'bg-blue-50 text-blue-700 border-blue-200',
@@ -33,33 +32,78 @@ const SEVERITY_STYLES = {
 /**
  * AuthorityDashboard Page Component
  * Foundation dashboard for municipal authorities and departmental officers.
+ * Consumes real complaint data from the central backend API.
  */
 export const AuthorityDashboard = () => {
   const [selectedDepartment, setSelectedDepartment] = useState('All Departments');
-  const [refreshTick, setRefreshTick] = useState(0);
+  const [allComplaints, setAllComplaints] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Sync with local authority updates
+  const fetchComplaints = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await getAuthorityComplaints();
+      setAllComplaints(data);
+    } catch (err) {
+      console.error('Failed to load complaints from backend:', err);
+      setError(err.message || 'Unable to connect to the complaint backend.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
+    fetchComplaints();
+
     const handleStateChange = () => {
-      setRefreshTick((prev) => prev + 1);
+      fetchComplaints();
     };
 
     window.addEventListener('authority-state-change', handleStateChange);
-    window.addEventListener('storage', handleStateChange);
     return () => {
       window.removeEventListener('authority-state-change', handleStateChange);
-      window.removeEventListener('storage', handleStateChange);
     };
-  }, []);
+  }, [fetchComplaints]);
 
-  // Reactive metrics and complaints calculation based on selected department
+  // Compute departmental KPIs dynamically from the live complaints dataset
   const metrics = useMemo(() => {
-    return calculateDepartmentMetrics(selectedDepartment);
-  }, [selectedDepartment, refreshTick]);
+    const scoped = selectedDepartment === 'All Departments'
+      ? allComplaints
+      : allComplaints.filter((item) => item.department === selectedDepartment);
 
+    const total = scoped.length;
+    const pending = scoped.filter(
+      (c) => c.status === 'Pending' || c.status === 'Submitted' || c.status === 'Under Review'
+    ).length;
+    const inProgress = scoped.filter(
+      (c) => c.status === 'Assigned' || c.status === 'In Progress'
+    ).length;
+    const resolved = scoped.filter((c) => c.status === 'Resolved').length;
+    const escalated = scoped.filter((c) => c.isEscalated || c.status === 'Escalated').length;
+    const critical = scoped.filter(
+      (c) => c.severity === 'Critical' || c.priority === 'Critical'
+    ).length;
+
+    return {
+      totalComplaints: total,
+      pending,
+      inProgress,
+      resolved,
+      escalated,
+      criticalIssues: critical
+    };
+  }, [allComplaints, selectedDepartment]);
+
+  // Extract recent complaints for selected scope
   const recentComplaints = useMemo(() => {
-    return getRecentDepartmentComplaints(selectedDepartment, 8);
-  }, [selectedDepartment, refreshTick]);
+    const scoped = selectedDepartment === 'All Departments'
+      ? allComplaints
+      : allComplaints.filter((item) => item.department === selectedDepartment);
+
+    return scoped.slice(0, 8);
+  }, [allComplaints, selectedDepartment]);
 
   return (
     <div className="space-y-6">
@@ -98,6 +142,17 @@ export const AuthorityDashboard = () => {
             </div>
 
             <div className="flex items-center gap-2.5 self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={fetchComplaints}
+                disabled={isLoading}
+                className="inline-flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-900 px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                title="Refresh complaints from backend"
+              >
+                <RotateCcw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+                <span>Refresh</span>
+              </button>
+
               <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
                 {recentComplaints.length} Records
               </span>
@@ -115,18 +170,43 @@ export const AuthorityDashboard = () => {
             </div>
           </div>
 
-          {/* Complaints List / Cards */}
-          <div className="divide-y divide-slate-100">
-            {recentComplaints.length === 0 ? (
-              <div className="p-12 text-center text-slate-400 space-y-2">
-                <Info className="w-8 h-8 mx-auto text-slate-300" />
-                <p className="text-sm font-medium text-slate-600">No active complaints found</p>
-                <p className="text-xs text-slate-400">
-                  No issues currently registered under {selectedDepartment}.
-                </p>
+          {/* Loading State */}
+          {isLoading && (
+            <div className="p-12 text-center space-y-3">
+              <div className="w-8 h-8 border-2 border-civic-600 border-t-transparent rounded-full animate-spin mx-auto" />
+              <p className="text-xs text-slate-500 font-medium">Fetching real complaints from municipal API...</p>
+            </div>
+          )}
+
+          {/* Error State */}
+          {!isLoading && error && (
+            <div className="p-8 text-center space-y-3">
+              <div className="w-10 h-10 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto border border-rose-200">
+                <AlertCircle className="w-5 h-5" />
               </div>
-            ) : (
-              recentComplaints.map((item) => (
+              <h3 className="text-sm font-bold text-slate-800">Unable to Load Complaints</h3>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">{error}</p>
+              <Button size="sm" variant="outline" onClick={fetchComplaints} icon={RotateCcw} className="text-xs">
+                Retry Connection
+              </Button>
+            </div>
+          )}
+
+          {/* Empty State */}
+          {!isLoading && !error && recentComplaints.length === 0 && (
+            <div className="p-12 text-center text-slate-400 space-y-2">
+              <Info className="w-8 h-8 mx-auto text-slate-300" />
+              <p className="text-sm font-medium text-slate-600">No complaints found</p>
+              <p className="text-xs text-slate-400">
+                No civic grievances registered under {selectedDepartment}.
+              </p>
+            </div>
+          )}
+
+          {/* Complaints List / Cards */}
+          {!isLoading && !error && recentComplaints.length > 0 && (
+            <div className="divide-y divide-slate-100">
+              {recentComplaints.map((item) => (
                 <article
                   key={item.id}
                   className="p-5 hover:bg-slate-50/70 transition-colors space-y-3 group"
@@ -195,9 +275,9 @@ export const AuthorityDashboard = () => {
                     </div>
                   </div>
                 </article>
-              ))
-            )}
-          </div>
+              ))}
+            </div>
+          )}
         </section>
 
         {/* Right Column: Municipal Operational Context & Readiness Desk (4 Columns on desktop) */}
@@ -274,14 +354,14 @@ export const AuthorityDashboard = () => {
             </ul>
           </div>
 
-          {/* Architecture Foundation Notice */}
-          <div className="p-4 rounded-xl bg-civic-50/80 border border-civic-200 text-xs text-civic-900 space-y-1">
-            <div className="flex items-center gap-1.5 font-bold text-civic-800">
-              <CheckCircle2 className="w-4 h-4 text-civic-600" />
-              <span>Commit 2: Workflow Active</span>
+          {/* Backend Connection Status Notice */}
+          <div className="p-4 rounded-xl bg-emerald-50/80 border border-emerald-200 text-xs text-emerald-900 space-y-1">
+            <div className="flex items-center gap-1.5 font-bold text-emerald-800">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              <span>Live Central Backend Connected</span>
             </div>
             <p className="text-[11px] text-slate-600 leading-normal">
-              Complaints management table, detail views, AI triage diagnostic drawer, and status assignment modals are now operational.
+              Operating against live PostgreSQL database via <code className="bg-white/80 px-1 py-0.5 rounded text-emerald-800">/api/complaints</code>. Real-time updates active.
             </p>
           </div>
         </aside>

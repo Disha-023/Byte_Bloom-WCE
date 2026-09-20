@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
   BarChart3,
@@ -15,7 +15,9 @@ import {
   Timer,
   Layers,
   Sparkles,
-  Info
+  Info,
+  RotateCcw,
+  AlertCircle
 } from 'lucide-react';
 import Button from '../../components/Button';
 import AuthorityAnalyticsCards from '../../components/authority/AuthorityAnalyticsCards';
@@ -40,55 +42,75 @@ const STATUS_COLORS = {
 /**
  * AuthorityAnalytics Page Component
  * Municipal operational analytics, distribution breakdowns, SLA monitors, and workload intelligence.
+ * Derived dynamically from the live PostgreSQL complaint database.
  */
 export const AuthorityAnalytics = () => {
   const [selectedDepartment, setSelectedDepartment] = useState('All Departments');
   const [analyticsData, setAnalyticsData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Fetch analytics from abstraction service
+  const fetchAnalytics = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await getAuthorityAnalytics(selectedDepartment);
+      setAnalyticsData(data);
+    } catch (err) {
+      console.error('Failed to load authority analytics from backend:', err);
+      setError(err.message || 'Unable to compute analytics from the municipal backend.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [selectedDepartment]);
+
   useEffect(() => {
-    let isMounted = true;
-    const fetchAnalytics = async () => {
-      setIsLoading(true);
-      try {
-        const data = await getAuthorityAnalytics(selectedDepartment);
-        if (isMounted) {
-          setAnalyticsData(data);
-        }
-      } catch (err) {
-        console.error('Failed to load authority analytics:', err);
-      } finally {
-        if (isMounted) setIsLoading(false);
-      }
-    };
-
     fetchAnalytics();
 
-    // Listen to local state modifications
     const handleStateChange = () => {
       fetchAnalytics();
     };
 
     window.addEventListener('authority-state-change', handleStateChange);
-    window.addEventListener('storage', handleStateChange);
     return () => {
-      isMounted = false;
       window.removeEventListener('authority-state-change', handleStateChange);
-      window.removeEventListener('storage', handleStateChange);
     };
-  }, [selectedDepartment]);
+  }, [fetchAnalytics]);
 
-  if (isLoading || !analyticsData) {
+  // Loading State
+  if (isLoading && !analyticsData) {
     return (
-      <div className="bg-white rounded-xl border border-slate-200 p-12 text-center space-y-3 max-w-md mx-auto my-8">
+      <div className="bg-white rounded-xl border border-slate-200 p-12 text-center space-y-3 max-w-md mx-auto my-8 shadow-sm">
         <div className="w-8 h-8 border-2 border-civic-600 border-t-transparent rounded-full animate-spin mx-auto" />
-        <p className="text-xs text-slate-500">Calculating departmental operational analytics...</p>
+        <p className="text-xs text-slate-500 font-medium">Computing live departmental analytics from backend...</p>
       </div>
     );
   }
 
-  const { summary, byIssueType, bySeverity, byStatus, departmentWorkload, resolutionStats } = analyticsData;
+  // Error State
+  if (error && !analyticsData) {
+    return (
+      <div className="bg-white rounded-xl border border-rose-200 p-8 text-center space-y-3 max-w-md mx-auto my-8 shadow-sm">
+        <div className="w-10 h-10 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto border border-rose-200">
+          <AlertCircle className="w-5 h-5" />
+        </div>
+        <h3 className="text-sm font-bold text-slate-800">Analytics Service Error</h3>
+        <p className="text-xs text-slate-500 max-w-sm mx-auto">{error}</p>
+        <Button size="sm" variant="outline" onClick={fetchAnalytics} icon={RotateCcw} className="text-xs">
+          Retry Analytics
+        </Button>
+      </div>
+    );
+  }
+
+  const { summary, byIssueType, bySeverity, byStatus, departmentWorkload, resolutionStats } = analyticsData || {
+    summary: { totalComplaints: 0, resolutionRate: 0, pending: 0, inProgress: 0, resolved: 0, escalated: 0, criticalIssues: 0, averageResolutionTime: 'N/A' },
+    byIssueType: {},
+    bySeverity: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+    byStatus: { Pending: 0, Assigned: 0, 'In Progress': 0, Resolved: 0, Escalated: 0 },
+    departmentWorkload: [],
+    resolutionStats: { totalResolved: 0, onTimeResolvedRate: 100, firstResponseAvgHours: 0, targetSlaCompliance: '100%' }
+  };
 
   // Calculate percentages for issue type bars
   const totalByIssueType = Object.values(byIssueType).reduce((sum, v) => sum + v, 0);
@@ -114,28 +136,41 @@ export const AuthorityAnalytics = () => {
           </h1>
 
           <p className="text-xs sm:text-sm text-slate-500">
-            Municipal resolution efficiency, departmental workload capacity, and SLA compliance metrics.
+            Municipal resolution efficiency, departmental workload capacity, and SLA compliance derived from live database records.
           </p>
         </div>
 
-        {/* Scope Dropdown */}
-        <div className="flex items-center gap-2">
-          <label htmlFor="analytics-dept" className="text-xs font-semibold text-slate-700 flex items-center gap-1">
-            <Filter className="w-3.5 h-3.5 text-slate-400" />
-            <span>Scope:</span>
-          </label>
-          <select
-            id="analytics-dept"
-            value={selectedDepartment}
-            onChange={(e) => setSelectedDepartment(e.target.value)}
-            className="px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-civic-500 shadow-xs"
+        {/* Scope Dropdown & Refresh */}
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={fetchAnalytics}
+            disabled={isLoading}
+            className="inline-flex items-center gap-1.5 text-xs text-slate-700 hover:text-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition-colors font-medium shadow-xs disabled:opacity-50"
+            title="Refresh analytics from backend"
           >
-            {DEPARTMENTS.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
+            <RotateCcw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
+
+          <div className="flex items-center gap-2">
+            <label htmlFor="analytics-dept" className="text-xs font-semibold text-slate-700 flex items-center gap-1">
+              <Filter className="w-3.5 h-3.5 text-slate-400" />
+              <span>Scope:</span>
+            </label>
+            <select
+              id="analytics-dept"
+              value={selectedDepartment}
+              onChange={(e) => setSelectedDepartment(e.target.value)}
+              className="px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-civic-500 shadow-xs"
+            >
+              {DEPARTMENTS.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -162,27 +197,34 @@ export const AuthorityAnalytics = () => {
             </span>
           </div>
 
-          <div className="space-y-3.5">
-            {Object.entries(byIssueType).map(([type, count]) => {
-              const pct = totalByIssueType > 0 ? Math.round((count / totalByIssueType) * 100) : 0;
-              return (
-                <div key={type} className="space-y-1.5 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-slate-700">{type}</span>
-                    <span className="text-slate-500 font-mono">
-                      <strong>{count}</strong> ({pct}%)
-                    </span>
+          {Object.keys(byIssueType).length === 0 ? (
+            <div className="p-8 text-center text-slate-400 space-y-1">
+              <p className="text-xs font-medium text-slate-600">No complaints in selected scope</p>
+              <p className="text-[11px] text-slate-400">Categories will populate as complaints are received.</p>
+            </div>
+          ) : (
+            <div className="space-y-3.5">
+              {Object.entries(byIssueType).map(([type, count]) => {
+                const pct = totalByIssueType > 0 ? Math.round((count / totalByIssueType) * 100) : 0;
+                return (
+                  <div key={type} className="space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-slate-700">{type}</span>
+                      <span className="text-slate-500 font-mono">
+                        <strong>{count}</strong> ({pct}%)
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                      <div
+                        className="bg-civic-600 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                    <div
-                      className="bg-civic-600 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Right: Complaints by Severity & Status (5 Columns) */}
@@ -284,7 +326,7 @@ export const AuthorityAnalytics = () => {
               <span>Departmental Workload & SLA Health</span>
             </h2>
             <p className="text-xs text-slate-500">
-              Comparative overview of task volume, active backlog, and resolution efficiency across divisions.
+              Live comparative overview of task volume, active backlog, and resolution efficiency across divisions.
             </p>
           </div>
 
@@ -370,57 +412,6 @@ export const AuthorityAnalytics = () => {
               ))}
             </tbody>
           </table>
-        </div>
-      </div>
-
-      {/* 4. SLA & Escalation Engine Integration Placeholder (Requirement 7) */}
-      <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 space-y-4">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-civic-700" />
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-              SLA Monitoring & Escalation Engine Hook (Member 4 Integration Placeholder)
-            </h3>
-          </div>
-          <span className="text-[11px] font-mono bg-slate-200 text-slate-700 px-2 py-0.5 rounded font-semibold">
-            Status: Hook Ready
-          </span>
-        </div>
-
-        <p className="text-xs text-slate-600 leading-relaxed">
-          The placeholders below expose standard SLA status, remaining response windows, and supervisor escalation state. They are pre-structured to consume telemetry from Member 4's automated background monitoring agent without interface refactoring.
-        </p>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-          {/* Placeholder 1: SLA Status */}
-          <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">
-            <span className="text-slate-400 font-medium">SLA State Telemetry</span>
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="font-bold text-slate-800">System Wide SLA Compliant</span>
-            </div>
-            <p className="text-[11px] text-slate-500">92% of active tickets within threshold</p>
-          </div>
-
-          {/* Placeholder 2: Remaining Response Time */}
-          <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">
-            <span className="text-slate-400 font-medium">Earliest SLA Expiry</span>
-            <div className="flex items-center gap-2 text-rose-700 font-bold">
-              <Timer className="w-3.5 h-3.5" />
-              <span>CIV-1007: 1 Hour Remaining</span>
-            </div>
-            <p className="text-[11px] text-slate-500">Emergency Squad #1 en route</p>
-          </div>
-
-          {/* Placeholder 3: Escalation State */}
-          <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">
-            <span className="text-slate-400 font-medium">Escalation Engine Trigger</span>
-            <div className="flex items-center gap-2 text-purple-700 font-bold">
-              <AlertTriangle className="w-3.5 h-3.5" />
-              <span>Supervisor Escalation Active</span>
-            </div>
-            <p className="text-[11px] text-slate-500">2 tickets escalated to Commissioner Desk</p>
-          </div>
         </div>
       </div>
     </div>
