@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   FileText,
@@ -12,7 +12,9 @@ import {
   RotateCcw,
   Sparkles,
   ArrowRight,
-  ShieldAlert
+  ShieldAlert,
+  Mic,
+  Square
 } from 'lucide-react';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -54,10 +56,38 @@ export const ReportIssue = () => {
   const [errors, setErrors] = useState({});
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState(null);
+
+  // Voice recording state (Browser Speech Recognition)
+  const [isRecording, setIsRecording] = useState(false);
+  const [isVoiceSupported, setIsVoiceSupported] = useState(false);
+  const [voiceError, setVoiceError] = useState('');
+  const [voiceSuccess, setVoiceSuccess] = useState(false);
+  const [interimTranscript, setInterimTranscript] = useState('');
+  const recognitionRef = useRef(null);
+
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState(null);
   const [submittedComplaint, setSubmittedComplaint] = useState(null);
+
+  useEffect(() => {
+    // Check SpeechRecognition support on mount
+    const SpeechRecognition = typeof window !== 'undefined'
+      ? (window.SpeechRecognition || window.webkitSpeechRecognition)
+      : null;
+    setIsVoiceSupported(!!SpeechRecognition);
+
+    return () => {
+      // Cleanup recognition session on unmount
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch (e) {
+          // ignore
+        }
+      }
+    };
+  }, []);
 
   // Field change handlers
   const handleInputChange = (field, value) => {
@@ -72,6 +102,112 @@ export const ReportIssue = () => {
     }
     if (submissionError) {
       setSubmissionError(null);
+    }
+  };
+
+  // Browser Speech Recognition Handler
+  const handleToggleVoiceRecording = () => {
+    setVoiceError('');
+    setVoiceSuccess(false);
+
+    if (isRecording) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {
+          // ignore
+        }
+      }
+      setIsRecording(false);
+      setInterimTranscript('');
+      return;
+    }
+
+    const SpeechRecognition = typeof window !== 'undefined'
+      ? (window.SpeechRecognition || window.webkitSpeechRecognition)
+      : null;
+
+    if (!SpeechRecognition) {
+      setVoiceError('Voice input is not supported in this browser. You can type your complaint instead.');
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-IN';
+
+      recognition.onstart = () => {
+        setIsRecording(true);
+        setVoiceError('');
+        setInterimTranscript('');
+      };
+
+      recognition.onresult = (event) => {
+        let currentInterim = '';
+        let newFinalChunk = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const transcriptPiece = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            newFinalChunk += transcriptPiece;
+          } else {
+            currentInterim += transcriptPiece;
+          }
+        }
+
+        if (newFinalChunk && newFinalChunk.trim()) {
+          const finalClean = newFinalChunk.trim();
+          setFormData((prev) => {
+            const existing = prev.description ? prev.description.trim() : '';
+            const updated = existing
+              ? `${existing} ${finalClean}`
+              : finalClean;
+            return { ...prev, description: updated };
+          });
+
+          if (errors.description) {
+            setErrors((prev) => {
+              const next = { ...prev };
+              delete next.description;
+              return next;
+            });
+          }
+          setVoiceSuccess(true);
+        }
+
+        setInterimTranscript(currentInterim);
+      };
+
+      recognition.onerror = (event) => {
+        setIsRecording(false);
+        setInterimTranscript('');
+
+        let errorMsg = 'An error occurred during voice recognition. Please try again or type your complaint.';
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          errorMsg = 'Microphone permission was denied. Please type your complaint instead.';
+        } else if (event.error === 'no-speech') {
+          errorMsg = 'No speech was detected. Please try again or type your complaint.';
+        } else if (event.error === 'network') {
+          errorMsg = 'Network error during speech recognition. Please check your connection or type manually.';
+        } else if (event.error === 'audio-capture') {
+          errorMsg = 'No microphone was found. Please ensure a microphone is connected.';
+        }
+        setVoiceError(errorMsg);
+      };
+
+      recognition.onend = () => {
+        setIsRecording(false);
+        setInterimTranscript('');
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err) {
+      console.error('Failed to start speech recognition:', err);
+      setIsRecording(false);
+      setVoiceError('Could not start voice recognition. Please type your complaint instead.');
     }
   };
 
@@ -231,10 +367,21 @@ export const ReportIssue = () => {
     if (formData.imagePreview) {
       URL.revokeObjectURL(formData.imagePreview);
     }
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch (e) {
+        // ignore
+      }
+    }
     setFormData(INITIAL_FORM_STATE);
     setErrors({});
     setIsLocating(false);
     setLocationError(null);
+    setIsRecording(false);
+    setVoiceError('');
+    setVoiceSuccess(false);
+    setInterimTranscript('');
     setIsSubmitted(false);
     setIsSubmitting(false);
     setSubmissionError(null);
@@ -560,16 +707,100 @@ export const ReportIssue = () => {
                   error={errors.description}
                   helperText="Describe the issue clearly so authorities can understand the problem."
                 >
-                  <textarea
-                    id="issue-description"
-                    rows={4}
-                    value={formData.description}
-                    onChange={(e) => handleInputChange('description', e.target.value)}
-                    placeholder="Describe the issue clearly so authorities can understand the problem."
-                    className={`w-full px-3.5 py-2 text-sm bg-white border rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-civic-500 resize-y ${
-                      errors.description ? 'border-rose-300 bg-rose-50/20' : 'border-slate-200'
-                    }`}
-                  />
+                  <div className="space-y-2.5">
+                    <textarea
+                      id="issue-description"
+                      rows={4}
+                      value={formData.description}
+                      onChange={(e) => handleInputChange('description', e.target.value)}
+                      placeholder="Describe the issue clearly so authorities can understand the problem. You can type or use voice input below."
+                      className={`w-full px-3.5 py-2 text-sm bg-white border rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-civic-500 resize-y ${
+                        errors.description ? 'border-rose-300 bg-rose-50/20' : 'border-slate-200'
+                      }`}
+                    />
+
+                    {/* Voice Input Controls */}
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            variant={isRecording ? 'danger' : 'secondary'}
+                            size="sm"
+                            icon={isRecording ? Square : Mic}
+                            onClick={handleToggleVoiceRecording}
+                            disabled={isSubmitting}
+                            aria-label={isRecording ? 'Stop voice recording' : 'Record complaint description using microphone'}
+                            className={`transition-all ${
+                              isRecording
+                                ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-600 shadow-sm animate-pulse'
+                                : 'text-slate-700 hover:text-slate-900'
+                            }`}
+                          >
+                            {isRecording ? (
+                              <span className="flex items-center gap-1.5 font-bold">
+                                <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                                Stop Recording
+                              </span>
+                            ) : (
+                              'Record Voice'
+                            )}
+                          </Button>
+
+                          {isRecording && (
+                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-600">
+                              <span className="w-2 h-2 rounded-full bg-rose-600 animate-ping" />
+                              Listening...
+                            </span>
+                          )}
+
+                          {voiceSuccess && !isRecording && (
+                            <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              Voice transcript added
+                            </span>
+                          )}
+                        </div>
+
+                        <span className="text-[11px] text-slate-400">
+                          Speech language: <span className="font-mono font-medium text-slate-600">en-IN</span>
+                        </span>
+                      </div>
+
+                      {/* Live Interim Transcript Display */}
+                      {isRecording && interimTranscript && (
+                        <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-600 italic flex items-start gap-2">
+                          <Sparkles className="w-3.5 h-3.5 text-civic-500 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-semibold text-slate-700 not-italic block text-[11px]">Live Speech:</span>
+                            <span>"{interimTranscript}"</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Voice Error Notice */}
+                      {voiceError && (
+                        <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-start justify-between gap-2">
+                          <div className="flex items-start gap-2">
+                            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                            <div>
+                              <span className="font-semibold block text-[11px]">Voice Input Notice:</span>
+                              <p className="text-amber-800 text-[11px] mt-0.5">{voiceError}</p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setVoiceError('')}
+                            className="text-amber-600 hover:text-amber-900 p-0.5"
+                            title="Dismiss"
+                            aria-label="Dismiss voice error"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </FormField>
 
                 {/* Severity */}

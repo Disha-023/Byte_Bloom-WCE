@@ -148,6 +148,22 @@ React Displays Real Submitted Complaint (Address, Coordinates, GPS Source) & AI 
 
 ---
 
+## Supported Input Methods
+
+The platform provides flexible and accessible reporting channels for citizens:
+
+1. **Text**: Direct manual typing of title, category, description, and landmarks.
+2. **Evidence Image**: Direct upload of JPEG, PNG, or WebP photo evidence (up to 10MB) analyzed by visual inspection.
+3. **Voice Input (Browser Speech Recognition)**:
+   - Built on native Web Speech API (`window.SpeechRecognition` / `window.webkitSpeechRecognition`).
+   - Uses `en-IN` recognition to transcribe spoken complaints directly into editable text in the browser.
+   - Populates and appends to the standard complaint `description` field with live interim preview.
+   - Requires no backend audio streaming or external cloud speech services.
+   - If speech recognition is unsupported or microphone access is denied, users can freely type their description manually.
+4. **GPS Location**: One-click acquisition of accurate latitude & longitude coordinates via the browser `navigator.geolocation` API.
+
+---
+
 ## API Endpoints
 
 ### 1. Submit Citizen Complaint
