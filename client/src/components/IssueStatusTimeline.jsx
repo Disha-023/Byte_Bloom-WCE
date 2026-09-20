@@ -1,10 +1,27 @@
 import React from 'react';
-import { Check, Clock, Circle, ArrowRight } from 'lucide-react';
-import { TIMELINE_STAGES } from '../utils/mockIssues';
+import { Check, Clock, Circle, ArrowRight, AlertTriangle } from 'lucide-react';
+
+export const TIMELINE_STAGES = [
+  { key: 'Submitted', label: 'Submitted', desc: 'Issue registered in system' },
+  { key: 'Under Review', label: 'Under Review', desc: 'Triaged and verified by civic team' },
+  { key: 'Assigned', label: 'Assigned', desc: 'Routed to responsible department' },
+  { key: 'In Progress', label: 'In Progress', desc: 'Field crew dispatched for resolution' },
+  { key: 'Resolved', label: 'Resolved', desc: 'Work completed and verified' }
+];
 
 export const IssueStatusTimeline = ({ currentStatus, updates = [] }) => {
   const stageOrder = ['Submitted', 'Under Review', 'Assigned', 'In Progress', 'Resolved'];
-  const currentIndex = stageOrder.indexOf(currentStatus);
+
+  // Normalize backend status values to timeline stages
+  let normalizedStatus = currentStatus;
+  if (currentStatus === 'Pending') {
+    normalizedStatus = 'Submitted';
+  } else if (currentStatus === 'Escalated') {
+    normalizedStatus = 'In Progress';
+  }
+
+  const currentIndex = Math.max(0, stageOrder.indexOf(normalizedStatus));
+  const isResolved = currentStatus === 'Resolved' || normalizedStatus === 'Resolved';
 
   return (
     <div className="space-y-6">
@@ -12,8 +29,8 @@ export const IssueStatusTimeline = ({ currentStatus, updates = [] }) => {
       <div className="hidden sm:block">
         <div className="flex items-center justify-between relative">
           {TIMELINE_STAGES.map((stage, idx) => {
-            const isCompleted = currentStatus === 'Resolved' ? true : idx < currentIndex;
-            const isCurrent = currentStatus === 'Resolved' ? idx === 4 : idx === currentIndex;
+            const isCompleted = isResolved ? true : idx < currentIndex;
+            const isCurrent = isResolved ? idx === 4 : idx === currentIndex;
             const isUpcoming = !isCompleted && !isCurrent;
 
             return (

@@ -53,7 +53,7 @@ def analyze_complaint(request: AnalyzeRequest) -> AnalyzeResponse:
     }
 
     # Step 2: Triage assessment, department routing, action, and SLA
-    assessment_block, routing_block, action_block, reason = evaluate_triage(
+    assessment_block, routing_block, action_block, reason, location_analysis = evaluate_triage(
         issue_type=classification.issue_type,
         description=request.description,
         evidence_summary=classification.evidence_summary,
@@ -79,6 +79,7 @@ def analyze_complaint(request: AnalyzeRequest) -> AnalyzeResponse:
         assessment=assessment_block,
         routing=routing_block,
         action=action_block,
+        location_analysis=location_analysis,
         reason=reason,
         # Flat compatibility fields
         issue_type=classification.issue_type,

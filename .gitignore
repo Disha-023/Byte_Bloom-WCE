@@ -28,3 +28,6 @@ Thumbs.db
 # Uploads
 uploads/
 server/uploads/
+
+# Local PostgreSQL Data
+pg_data/

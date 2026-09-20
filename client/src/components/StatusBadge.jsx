@@ -9,6 +9,12 @@ import {
 } from 'lucide-react';
 
 const STATUS_CONFIG = {
+  'Pending': {
+    label: 'Pending',
+    icon: Clock,
+    badgeClass: 'bg-amber-50 text-amber-700 border-amber-200',
+    dotClass: 'bg-amber-500'
+  },
   'Submitted': {
     label: 'Submitted',
     icon: Clock,
@@ -24,8 +30,8 @@ const STATUS_CONFIG = {
   'Assigned': {
     label: 'Assigned',
     icon: UserCheck,
-    badgeClass: 'bg-amber-50 text-amber-700 border-amber-200',
-    dotClass: 'bg-amber-500'
+    badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    dotClass: 'bg-indigo-500'
   },
   'In Progress': {
     label: 'In Progress',
@@ -38,6 +44,12 @@ const STATUS_CONFIG = {
     icon: CheckCircle2,
     badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     dotClass: 'bg-emerald-500'
+  },
+  'Escalated': {
+    label: 'Escalated',
+    icon: Activity,
+    badgeClass: 'bg-rose-50 text-rose-700 border-rose-200 font-bold',
+    dotClass: 'bg-rose-500'
   }
 };
 

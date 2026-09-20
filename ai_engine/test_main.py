@@ -462,3 +462,93 @@ def test_analyze_location_validation_errors():
         json={"complaint_id": "C-VAL-4", "description": "Pothole on road", "latitude": 16.5, "longitude": -185.0},
     )
     assert resp_lng_low.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Test 20: Structured Location Analysis Object & All 4 Context States
+# ---------------------------------------------------------------------------
+def test_location_analysis_states():
+    """Verify structured location_analysis object and deterministic states without fabricated data."""
+    # State 1: Both GPS and address available
+    resp1 = client.post(
+        "/api/v1/analyze",
+        json={
+            "complaint_id": "C-LOC-1",
+            "description": "Large pothole in roadway.",
+            "latitude": 16.8524,
+            "longitude": 74.5815,
+            "address": "Opposite City Hospital",
+        },
+    )
+    assert resp1.status_code == 200
+    loc1 = resp1.json().get("location_analysis")
+    assert loc1 is not None
+    assert loc1["coordinates_available"] is True
+    assert loc1["latitude"] == 16.8524
+    assert loc1["longitude"] == 74.5815
+    assert loc1["address_available"] is True
+    assert loc1["location_confidence"] == 1.0
+    assert loc1["location_source"] == "gps_and_address"
+    assert loc1["context_state"] == "both GPS and address available"
+    assert "Valid GPS coordinates and the submitted address are available" in loc1["summary"]
+    assert "Valid GPS coordinates and the submitted address are available" in resp1.json()["reason"]
+
+    # State 2: GPS only (no address)
+    resp2 = client.post(
+        "/api/v1/analyze",
+        json={
+            "complaint_id": "C-LOC-2",
+            "description": "Large pothole in roadway.",
+            "latitude": 16.8524,
+            "longitude": 74.5815,
+        },
+    )
+    assert resp2.status_code == 200
+    loc2 = resp2.json().get("location_analysis")
+    assert loc2 is not None
+    assert loc2["coordinates_available"] is True
+    assert loc2["address_available"] is False
+    assert loc2["location_confidence"] == 0.85
+    assert loc2["location_source"] == "gps_only"
+    assert loc2["context_state"] == "GPS coordinates available + valid"
+    assert "Valid GPS coordinates are available" in loc2["summary"]
+    assert "Valid GPS coordinates are available" in resp2.json()["reason"]
+
+    # State 3: Address only (no GPS)
+    resp3 = client.post(
+        "/api/v1/analyze",
+        json={
+            "complaint_id": "C-LOC-3",
+            "description": "Large pothole in roadway.",
+            "address": "Opposite City Hospital",
+        },
+    )
+    assert resp3.status_code == 200
+    loc3 = resp3.json().get("location_analysis")
+    assert loc3 is not None
+    assert loc3["coordinates_available"] is False
+    assert loc3["address_available"] is True
+    assert loc3["location_confidence"] == 0.60
+    assert loc3["location_source"] == "address_only"
+    assert loc3["context_state"] == "address available"
+    assert "Submitted address is available" in loc3["summary"]
+    assert "Submitted address is available" in resp3.json()["reason"]
+
+    # State 4: Location unavailable (no GPS and no address)
+    resp4 = client.post(
+        "/api/v1/analyze",
+        json={
+            "complaint_id": "C-LOC-4",
+            "description": "Large pothole in roadway.",
+        },
+    )
+    assert resp4.status_code == 200
+    loc4 = resp4.json().get("location_analysis")
+    assert loc4 is not None
+    assert loc4["coordinates_available"] is False
+    assert loc4["address_available"] is False
+    assert loc4["location_confidence"] == 0.0
+    assert loc4["location_source"] == "unavailable"
+    assert loc4["context_state"] == "location unavailable"
+    assert "Location coordinates and address are unavailable" in loc4["summary"]
+    assert "Location coordinates and address are unavailable" in resp4.json()["reason"]

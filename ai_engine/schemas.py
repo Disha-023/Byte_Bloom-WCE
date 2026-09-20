@@ -111,6 +111,21 @@ class ActionBlock(BaseModel):
     sla_hours: int = Field(..., ge=1)
 
 
+class LocationAnalysisBlock(BaseModel):
+    """
+    Transparent location reasoning block containing only factual geographic
+    context derived from submitted coordinates and address without fabricated infrastructure.
+    """
+    coordinates_available: bool = Field(..., description="Whether GPS coordinates are present and valid")
+    latitude: Optional[float] = Field(default=None, description="Validated latitude")
+    longitude: Optional[float] = Field(default=None, description="Validated longitude")
+    address_available: bool = Field(..., description="Whether human-readable address was provided")
+    location_confidence: float = Field(..., ge=0.0, le=1.0, description="Normalized location confidence score")
+    location_source: str = Field(..., description="Source of location context: gps_and_address, gps_only, address_only, or unavailable")
+    context_state: str = Field(..., description="Factual location context state")
+    summary: str = Field(..., description="Transparent factual summary of location context")
+
+
 class AnalyzeRequest(BaseModel):
     """
     Schema for civic complaint analysis request.
@@ -176,6 +191,7 @@ class AnalyzeResponse(BaseModel):
     assessment: AssessmentBlock
     routing: RoutingBlock
     action: ActionBlock
+    location_analysis: Optional[LocationAnalysisBlock] = None
     reason: str
 
     # Backwards-compatible flat fields

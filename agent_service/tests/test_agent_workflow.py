@@ -257,8 +257,12 @@ def test_idempotency_repeated_workflow_execution(db_session):
     assert "already escalated" in run2["decision_reason"].lower()
 
 
-def test_complaint_not_found_returns_404(client):
+def test_complaint_not_found_returns_404(client, monkeypatch):
     """Test 9: Calling /agent/run/{complaint_id} with unknown ID returns HTTP 404."""
+    monkeypatch.setattr(
+        "app.services.complaint_data_provider.CentralComplaintApiDataProvider.get_complaint",
+        lambda self, complaint_id: None,
+    )
     response = client.post("/agent/run/NONEXISTENT_999")
     assert response.status_code == 404
     assert "not found" in response.json()["detail"].lower()

@@ -11,6 +11,7 @@ try:
         AssessmentBlock,
         ActionBlock,
         DepartmentType,
+        LocationAnalysisBlock,
         PriorityLevel,
         RoutingBlock,
         SeverityLevel,
@@ -22,6 +23,7 @@ except (ImportError, ValueError):
         AssessmentBlock,
         ActionBlock,
         DepartmentType,
+        LocationAnalysisBlock,
         PriorityLevel,
         RoutingBlock,
         SeverityLevel,
@@ -75,6 +77,66 @@ def calculate_sla(severity: SeverityLevel, priority: PriorityLevel) -> int:
     if severity == "medium" or priority == "medium":
         return 72
     return 120
+
+
+def analyze_location(
+    latitude: Optional[float] = None,
+    longitude: Optional[float] = None,
+    address: Optional[str] = None,
+) -> LocationAnalysisBlock:
+    """
+    Transparent, deterministic location reasoning layer.
+    Validates coordinates and determines factual location context state without fabricating
+    unverified infrastructure or jurisdiction claims.
+    """
+    has_lat = latitude is not None
+    has_lng = longitude is not None
+    valid_coords = False
+
+    if has_lat and has_lng:
+        try:
+            num_lat = float(latitude)
+            num_lng = float(longitude)
+            if -90.0 <= num_lat <= 90.0 and -180.0 <= num_lng <= 180.0:
+                valid_coords = True
+                latitude = num_lat
+                longitude = num_lng
+        except (ValueError, TypeError):
+            valid_coords = False
+
+    has_address = bool(address and str(address).strip())
+
+    if valid_coords and has_address:
+        location_source = "gps_and_address"
+        context_state = "both GPS and address available"
+        location_confidence = 1.0
+        summary = "Valid GPS coordinates and the submitted address are available and are included as location context for this complaint."
+    elif valid_coords:
+        location_source = "gps_only"
+        context_state = "GPS coordinates available + valid"
+        location_confidence = 0.85
+        summary = "Valid GPS coordinates are available and are included as location context for this complaint."
+    elif has_address:
+        location_source = "address_only"
+        context_state = "address available"
+        location_confidence = 0.60
+        summary = "Submitted address is available and is included as location context for this complaint."
+    else:
+        location_source = "unavailable"
+        context_state = "location unavailable"
+        location_confidence = 0.0
+        summary = "Location coordinates and address are unavailable."
+
+    return LocationAnalysisBlock(
+        coordinates_available=valid_coords,
+        latitude=latitude if valid_coords else None,
+        longitude=longitude if valid_coords else None,
+        address_available=has_address,
+        location_confidence=location_confidence,
+        location_source=location_source,
+        context_state=context_state,
+        summary=summary,
+    )
 
 
 def assess_severity_and_priority(
@@ -191,6 +253,18 @@ def assess_severity_and_priority(
         reason = "The complaint does not provide sufficient detail to classify a specific municipal hazard; additional citizen information is needed."
         confidence = 0.70
 
+    # Explicitly ground AI reasoning in location context when available
+    if location_context is not None:
+        loc_analysis = location_context.get("location_analysis")
+        if loc_analysis is None:
+            loc_analysis = analyze_location(
+                latitude=location_context.get("latitude"),
+                longitude=location_context.get("longitude"),
+                address=location_context.get("address"),
+            )
+        if loc_analysis and loc_analysis.summary:
+            reason = f"{reason} {loc_analysis.summary}"
+
     return severity, priority, confidence, reason
 
 
@@ -199,16 +273,28 @@ def evaluate_triage(
     description: str,
     evidence_summary: str = "",
     location_context: Optional[Dict[str, Any]] = None,
-) -> Tuple[AssessmentBlock, RoutingBlock, ActionBlock, str]:
+) -> Tuple[AssessmentBlock, RoutingBlock, ActionBlock, str, LocationAnalysisBlock]:
     """
-    Complete triage evaluator returning typed Assessment, Routing, and Action blocks.
-    Location context is accepted as structured context.
+    Complete triage evaluator returning typed Assessment, Routing, Action blocks,
+    grounded reason, and LocationAnalysisBlock.
     """
+    loc_analysis = None
+    if location_context is not None:
+        loc_analysis = location_context.get("location_analysis")
+        if loc_analysis is None:
+            loc_analysis = analyze_location(
+                latitude=location_context.get("latitude"),
+                longitude=location_context.get("longitude"),
+                address=location_context.get("address"),
+            )
+    else:
+        loc_analysis = analyze_location()
+
     severity, priority, assess_conf, reason = assess_severity_and_priority(
         issue_type=issue_type,
         description=description,
         evidence_summary=evidence_summary,
-        location_context=location_context,
+        location_context={"location_analysis": loc_analysis},
     )
 
     department = DEPARTMENT_MAP.get(issue_type, "other")
@@ -233,5 +319,5 @@ def evaluate_triage(
         sla_hours=sla,
     )
 
-    return assessment_block, routing_block, action_block, reason
+    return assessment_block, routing_block, action_block, reason, loc_analysis
 
