@@ -1,17 +1,21 @@
 import React from 'react';
+import { NavLink } from 'react-router-dom';
 import {
   Building2,
   Shield,
   Calendar,
   Filter,
   UserCheck,
-  Activity
+  Activity,
+  ClipboardList,
+  BarChart3
 } from 'lucide-react';
 import { DEPARTMENTS, AUTHORITY_OFFICER } from '../../utils/authorityState';
 
 /**
  * AuthorityHeader Component
- * Displays portal branding, active department dropdown, official identity, and operational context.
+ * Displays portal branding, active department dropdown, official identity, operational context,
+ * and seamless navigation between Overview, Complaints Queue, and Analytics views.
  */
 export const AuthorityHeader = ({
   selectedDepartment,
@@ -84,7 +88,7 @@ export const AuthorityHeader = ({
           <select
             id="department-filter"
             value={selectedDepartment}
-            onChange={(e) => onDepartmentChange(e.target.value)}
+            onChange={(e) => onDepartmentChange && onDepartmentChange(e.target.value)}
             className="px-3.5 py-2 text-xs sm:text-sm font-medium text-slate-800 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-civic-500 focus:border-civic-500 transition-colors shadow-sm"
           >
             {DEPARTMENTS.map((dept) => (
@@ -112,6 +116,52 @@ export const AuthorityHeader = ({
           </div>
         </div>
       </div>
+
+      {/* Portal Sub-Navigation Tabs */}
+      <nav aria-label="Authority Portal Sections" className="flex items-center gap-2 pt-3 border-t border-slate-100 overflow-x-auto text-xs font-semibold">
+        <NavLink
+          to="/authority"
+          end
+          className={({ isActive }) =>
+            `px-3.5 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
+              isActive
+                ? 'bg-civic-50 text-civic-700 border border-civic-200'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+            }`
+          }
+        >
+          <Building2 className="w-3.5 h-3.5" />
+          <span>Operations Overview</span>
+        </NavLink>
+
+        <NavLink
+          to="/authority/complaints"
+          className={({ isActive }) =>
+            `px-3.5 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
+              isActive
+                ? 'bg-civic-50 text-civic-700 border border-civic-200'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+            }`
+          }
+        >
+          <ClipboardList className="w-3.5 h-3.5" />
+          <span>Complaints Queue</span>
+        </NavLink>
+
+        <NavLink
+          to="/authority/analytics"
+          className={({ isActive }) =>
+            `px-3.5 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
+              isActive
+                ? 'bg-civic-50 text-civic-700 border border-civic-200'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+            }`
+          }
+        >
+          <BarChart3 className="w-3.5 h-3.5" />
+          <span>Analytics & SLA Insights</span>
+        </NavLink>
+      </nav>
     </header>
   );
 };

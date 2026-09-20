@@ -8,6 +8,7 @@ import TrackIssue from '../pages/TrackIssue';
 import AuthorityDashboard from '../pages/authority/AuthorityDashboard';
 import AuthorityComplaints from '../pages/authority/AuthorityComplaints';
 import AuthorityComplaintDetails from '../pages/authority/AuthorityComplaintDetails';
+import AuthorityAnalytics from '../pages/authority/AuthorityAnalytics';
 
 export const AppRoutes = () => {
   return (
@@ -20,6 +21,7 @@ export const AppRoutes = () => {
         <Route path="/authority" element={<AuthorityDashboard />} />
         <Route path="/authority/complaints" element={<AuthorityComplaints />} />
         <Route path="/authority/complaints/:id" element={<AuthorityComplaintDetails />} />
+        <Route path="/authority/analytics" element={<AuthorityAnalytics />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

@@ -226,6 +226,62 @@ export const AuthorityComplaintDetails = () => {
             </div>
           </div>
 
+          {/* Section: SLA Telemetry & Escalation State (Member 4 Integration Placeholder) */}
+          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-3">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Timer className="w-4 h-4 text-civic-600" />
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                  SLA Monitoring & Escalation Hook
+                </h3>
+              </div>
+              <span className="text-[10px] font-mono font-semibold bg-slate-100 text-slate-700 px-2 py-0.5 rounded border border-slate-200">
+                Member 4 Hook Ready
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
+                <span className="text-[11px] text-slate-500 font-medium">SLA Compliance</span>
+                <div className="flex items-center gap-1.5 font-semibold text-slate-800">
+                  <span className={`w-2 h-2 rounded-full ${complaint.status === 'Resolved' ? 'bg-emerald-500' : (complaint.isEscalated ? 'bg-rose-500' : 'bg-emerald-500 animate-pulse')}`} />
+                  <span>
+                    {complaint.status === 'Resolved'
+                      ? 'Closed Within SLA'
+                      : complaint.isEscalated
+                      ? 'Threshold Breached'
+                      : 'Within Limits (Active)'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
+                <span className="text-[11px] text-slate-500 font-medium">Remaining Response Time</span>
+                <p className="font-mono font-bold text-slate-900">
+                  {complaint.status === 'Resolved'
+                    ? 'Completed (0h)'
+                    : complaint.slaHoursRemaining !== undefined
+                    ? `${complaint.slaHoursRemaining}h remaining`
+                    : '18h remaining'}
+                </p>
+              </div>
+
+              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
+                <span className="text-[11px] text-slate-500 font-medium">Escalation State</span>
+                <div className="flex items-center gap-1 font-semibold">
+                  {complaint.isEscalated ? (
+                    <span className="text-rose-700 inline-flex items-center gap-1">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      <span>Escalated to Supervisor</span>
+                    </span>
+                  ) : (
+                    <span className="text-slate-600">Standard Tier (No Escalation)</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Section 5: Citizen-Submitted Evidence (Clearly Distinguished) */}
           <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">

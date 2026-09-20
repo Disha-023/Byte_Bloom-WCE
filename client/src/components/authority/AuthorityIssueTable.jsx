@@ -138,10 +138,18 @@ export const AuthorityIssueTable = ({
 
                   {/* Status */}
                   <td className="py-3 px-4 whitespace-nowrap">
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[11px] font-medium ${statusClass}`}>
-                      <span className="w-1.5 h-1.5 rounded-full bg-current" />
-                      <span>{item.status}</span>
-                    </span>
+                    <div className="flex flex-col gap-1">
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[11px] font-medium w-fit ${statusClass}`}>
+                        <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                        <span>{item.status}</span>
+                      </span>
+                      {item.isEscalated && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200 w-fit">
+                          <AlertOctagon className="w-3 h-3" />
+                          <span>Escalated (SLA Alert)</span>
+                        </span>
+                      )}
+                    </div>
                   </td>
 
                   {/* Created Date */}
