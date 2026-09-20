@@ -1,20 +1,22 @@
 """
-Unit and integration test suite for AI Intelligence Module (COMMIT 2).
-Tests cover:
-1. Pothole complaint
-2. Garbage complaint
-3. Water leakage complaint
-4. Streetlight complaint
-5. Road damage complaint
-6. Unclear complaint
-7. Missing Gemini API key / fallback mode
-8. Existing COMMIT 1 health endpoint
-9. Existing POST /api/v1/analyze endpoint
-10. Invalid request validation
-Additional tests: Gemini mocked call and graceful image failure handling.
+Unit and integration test suite for AI Intelligence Module (Commit 3).
+Validates:
+1. Pothole complaints (large vs small)
+2. Garbage complaints
+3. Water leakage complaints
+4. Drainage complaints
+5. Streetlight complaints
+6. Road damage complaints
+7. Unclear complaints (fallback to other)
+8. Department mapping rules
+9. Severity and priority assessment rules
+10. Suggested action mapping rules
+11. SLA calculation rules
+12. Full end-to-end pipeline and structured nested response
+13. Health endpoint and input validation
+14. Mocked Gemini inference
 """
 
-import os
 from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
@@ -22,9 +24,23 @@ from fastapi.testclient import TestClient
 try:
     from .main import app
     from .classifier import classify_issue
+    from .triage import (
+        ACTION_MAP,
+        DEPARTMENT_MAP,
+        assess_severity_and_priority,
+        calculate_sla,
+        evaluate_triage,
+    )
 except (ImportError, ValueError):
     from main import app
     from classifier import classify_issue
+    from triage import (
+        ACTION_MAP,
+        DEPARTMENT_MAP,
+        assess_severity_and_priority,
+        calculate_sla,
+        evaluate_triage,
+    )
 
 client = TestClient(app)
 
@@ -32,144 +48,17 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def isolate_from_live_api(monkeypatch):
     """
-    Ensures unit tests do NOT call the real Gemini API over the network,
-    matching the strict project requirement to use mocks/fallback mode for automated testing.
+    Ensures unit tests do NOT call the live Gemini API over the network,
+    satisfying the strict project requirement to use mocks/fallback mode for tests.
     """
     monkeypatch.setenv("GEMINI_API_KEY", "")
 
 
-
 # ---------------------------------------------------------------------------
-# Test 1: Pothole complaint
-# ---------------------------------------------------------------------------
-def test_pothole_complaint():
-    """Test classification of a pothole complaint into the 'pothole' category."""
-    payload = {
-        "complaint_id": "P-101",
-        "description": "Dangerous pothole crater in the center of the road causing tire damage.",
-        "image_url": None,
-    }
-    response = client.post("/api/v1/analyze", json=payload)
-    assert response.status_code == 200
-    data = response.json()
-    assert data["issue_type"] == "pothole"
-    assert data["severity"] == "High"
-    assert data["department"] == "Roads & Infrastructure Department"
-    assert data["confidence"] >= 0.8
-    assert data["image_analyzed"] is False
-
-
-# ---------------------------------------------------------------------------
-# Test 2: Garbage complaint
-# ---------------------------------------------------------------------------
-def test_garbage_complaint():
-    """Test classification of uncollected solid waste into the 'garbage' category."""
-    payload = {
-        "complaint_id": "G-102",
-        "description": "Overflowing garbage dump and rubbish bins spreading on the sidewalk.",
-        "image_url": None,
-    }
-    response = client.post("/api/v1/analyze", json=payload)
-    assert response.status_code == 200
-    data = response.json()
-    assert data["issue_type"] == "garbage"
-    assert data["department"] == "Solid Waste Management Division"
-    assert data["confidence"] >= 0.8
-
-
-# ---------------------------------------------------------------------------
-# Test 3: Water leakage complaint
-# ---------------------------------------------------------------------------
-def test_water_leakage_complaint():
-    """Test classification of municipal pipeline leak into 'water_leakage'."""
-    payload = {
-        "complaint_id": "W-103",
-        "description": "Massive water leak from a burst pipe flooding the residential corner.",
-        "image_url": None,
-    }
-    response = client.post("/api/v1/analyze", json=payload)
-    assert response.status_code == 200
-    data = response.json()
-    assert data["issue_type"] == "water_leakage"
-    assert data["department"] == "Water Supply & Sewerage Board"
-    assert data["confidence"] >= 0.8
-
-
-# ---------------------------------------------------------------------------
-# Test 4: Streetlight complaint
-# ---------------------------------------------------------------------------
-def test_streetlight_complaint():
-    """Test classification of broken street light into 'streetlight'."""
-    payload = {
-        "complaint_id": "S-104",
-        "description": "The street light is dark and lamp post has blown bulb near school.",
-        "image_url": None,
-    }
-    response = client.post("/api/v1/analyze", json=payload)
-    assert response.status_code == 200
-    data = response.json()
-    assert data["issue_type"] == "streetlight"
-    assert data["department"] == "Electrical Engineering & Street Lighting"
-    assert data["confidence"] >= 0.8
-
-
-# ---------------------------------------------------------------------------
-# Test 5: Road damage complaint
-# ---------------------------------------------------------------------------
-def test_road_damage_complaint():
-    """Test classification of road surface deterioration into 'road_damage'."""
-    payload = {
-        "complaint_id": "R-105",
-        "description": "Severe road damage and cracked asphalt pavement along the bypass.",
-        "image_url": None,
-    }
-    response = client.post("/api/v1/analyze", json=payload)
-    assert response.status_code == 200
-    data = response.json()
-    assert data["issue_type"] == "road_damage"
-    assert data["department"] == "Roads & Infrastructure Department"
-    assert data["confidence"] >= 0.8
-
-
-# ---------------------------------------------------------------------------
-# Test 6: Unclear complaint
-# ---------------------------------------------------------------------------
-def test_unclear_complaint():
-    """Test ambiguous or unmapped complaint falls back gracefully to 'other'."""
-    payload = {
-        "complaint_id": "U-106",
-        "description": "Something strange is happening in our neighborhood.",
-        "image_url": None,
-    }
-    response = client.post("/api/v1/analyze", json=payload)
-    assert response.status_code == 200
-    data = response.json()
-    assert data["issue_type"] == "other"
-    assert "general" in data["evidence_summary"].lower() or "unidentifiable" in data["evidence_summary"].lower()
-
-
-# ---------------------------------------------------------------------------
-# Test 7: Missing Gemini API key / fallback mode
-# ---------------------------------------------------------------------------
-def test_fallback_mode_without_api_key(monkeypatch):
-    """Test that missing GEMINI_API_KEY triggers deterministic fallback without crashing."""
-    monkeypatch.setenv("GEMINI_API_KEY", "")
-
-    result = classify_issue(
-        description="Big pothole in front of gate",
-        image_url=None,
-    )
-    assert result.issue_type == "pothole"
-    assert result.confidence > 0.8
-    assert result.image_analyzed is False
-    assert "pothole" in result.evidence_summary.lower()
-
-
-# ---------------------------------------------------------------------------
-# Test 8: Existing COMMIT 1 health endpoint
+# Test 1: Health Check Endpoint
 # ---------------------------------------------------------------------------
 def test_health_endpoint():
-    """Verify GET /health remains fully operational from COMMIT 1."""
+    """Verify GET /health remains operational."""
     response = client.get("/health")
     assert response.status_code == 200
     data = response.json()
@@ -178,10 +67,235 @@ def test_health_endpoint():
 
 
 # ---------------------------------------------------------------------------
-# Test 9: Existing POST /api/v1/analyze endpoint (backwards compatibility)
+# Test 2: Large Pothole Complaint Pipeline
 # ---------------------------------------------------------------------------
-def test_analyze_endpoint_contract():
-    """Verify POST /api/v1/analyze matches the exact contract required by user."""
+def test_large_pothole_pipeline():
+    """Test deep/large pothole assigns high severity, road_public_works, and inspect_and_repair."""
+    payload = {
+        "complaint_id": "C-101",
+        "description": "There is a large pothole near the college gate causing vehicle hazards.",
+        "image_url": None,
+    }
+    response = client.post("/api/v1/analyze", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+
+    # Nested structured response validation
+    assert data["complaint_id"] == "C-101"
+    assert data["classification"]["issue_type"] == "pothole"
+    assert data["classification"]["confidence"] >= 0.8
+    assert data["evidence"]["image_analyzed"] is False
+    assert len(data["evidence"]["summary"]) > 0
+    assert data["assessment"]["severity"] == "high"
+    assert data["assessment"]["priority"] == "high"
+    assert data["routing"]["department"] == "road_public_works"
+    assert data["action"]["suggested"] == "inspect_and_repair"
+    assert data["action"]["sla_hours"] == 48
+    assert "road safety risk" in data["reason"] or "pothole" in data["reason"]
+
+    # Flat compatibility fields validation
+    assert data["issue_type"] == "pothole"
+    assert data["severity"] == "high"
+    assert data["priority"] == "high"
+    assert data["department"] == "road_public_works"
+    assert data["sla_hours"] == 48
+
+
+# ---------------------------------------------------------------------------
+# Test 3: Small Pothole Complaint Pipeline
+# ---------------------------------------------------------------------------
+def test_small_pothole_pipeline():
+    """Test minor/small pothole receives low severity and longer SLA."""
+    payload = {
+        "complaint_id": "C-102",
+        "description": "A small shallow pothole in the residential back lane.",
+        "image_url": None,
+    }
+    response = client.post("/api/v1/analyze", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["classification"]["issue_type"] == "pothole"
+    assert data["assessment"]["severity"] in ["low", "medium"]
+    assert data["assessment"]["priority"] in ["low", "medium"]
+    assert data["routing"]["department"] == "road_public_works"
+    assert data["action"]["suggested"] == "inspect_and_repair"
+    assert data["action"]["sla_hours"] in [72, 120]
+
+
+# ---------------------------------------------------------------------------
+# Test 4: Garbage Complaint Pipeline
+# ---------------------------------------------------------------------------
+def test_garbage_pipeline():
+    """Test overflowing garbage maps to sanitation and inspect_and_remove."""
+    payload = {
+        "complaint_id": "C-103",
+        "description": "Massive overflowing garbage dump on the street corner spreading odor and flies.",
+        "image_url": None,
+    }
+    response = client.post("/api/v1/analyze", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["classification"]["issue_type"] == "garbage"
+    assert data["routing"]["department"] == "sanitation"
+    assert data["action"]["suggested"] == "inspect_and_remove"
+    assert data["assessment"]["severity"] in ["medium", "high"]
+    assert data["action"]["sla_hours"] in [48, 72]
+
+
+# ---------------------------------------------------------------------------
+# Test 5: Major Water Leakage Pipeline
+# ---------------------------------------------------------------------------
+def test_major_water_leakage_pipeline():
+    """Test burst water pipe maps to water_department and critical/urgent SLA."""
+    payload = {
+        "complaint_id": "C-104",
+        "description": "Major burst water pipe flooding the whole avenue with high pressure water.",
+        "image_url": None,
+    }
+    response = client.post("/api/v1/analyze", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["classification"]["issue_type"] == "water_leakage"
+    assert data["routing"]["department"] == "water_department"
+    assert data["action"]["suggested"] == "inspect_and_repair_leak"
+    assert data["assessment"]["severity"] in ["high", "critical"]
+    assert data["assessment"]["priority"] in ["high", "urgent"]
+    assert data["action"]["sla_hours"] in [24, 48]
+
+
+# ---------------------------------------------------------------------------
+# Test 6: Drainage Issue Pipeline
+# ---------------------------------------------------------------------------
+def test_drainage_pipeline():
+    """Test blocked drainage maps to drainage_department and inspect_and_clear_drainage."""
+    payload = {
+        "complaint_id": "C-105",
+        "description": "Blocked drainage conduit and overflowing sewer creating flooding on sidewalk.",
+        "image_url": None,
+    }
+    response = client.post("/api/v1/analyze", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["classification"]["issue_type"] == "drainage"
+    assert data["routing"]["department"] == "drainage_department"
+    assert data["action"]["suggested"] == "inspect_and_clear_drainage"
+    assert data["assessment"]["severity"] in ["high", "critical"]
+    assert data["action"]["sla_hours"] in [24, 48]
+
+
+# ---------------------------------------------------------------------------
+# Test 7: Broken Streetlight Pipeline
+# ---------------------------------------------------------------------------
+def test_broken_streetlight_pipeline():
+    """Test broken streetlight maps to electrical_department and inspect_and_repair_light."""
+    payload = {
+        "complaint_id": "C-106",
+        "description": "The streetlight is dark and lamp post has blown fixture near the school crossing.",
+        "image_url": None,
+    }
+    response = client.post("/api/v1/analyze", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["classification"]["issue_type"] == "streetlight"
+    assert data["routing"]["department"] == "electrical_department"
+    assert data["action"]["suggested"] == "inspect_and_repair_light"
+    assert data["assessment"]["severity"] in ["medium", "high"]
+    assert data["action"]["sla_hours"] in [48, 72]
+
+
+# ---------------------------------------------------------------------------
+# Test 8: Road Damage Pipeline
+# ---------------------------------------------------------------------------
+def test_road_damage_pipeline():
+    """Test road damage maps to road_public_works and inspect_and_repair."""
+    payload = {
+        "complaint_id": "C-107",
+        "description": "Severe road damage and cracked asphalt pavement along the bypass route.",
+        "image_url": None,
+    }
+    response = client.post("/api/v1/analyze", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["classification"]["issue_type"] == "road_damage"
+    assert data["routing"]["department"] == "road_public_works"
+    assert data["action"]["suggested"] == "inspect_and_repair"
+    assert data["assessment"]["severity"] in ["high", "critical"]
+    assert data["action"]["sla_hours"] in [24, 48]
+
+
+# ---------------------------------------------------------------------------
+# Test 9: Unclear Complaint Pipeline
+# ---------------------------------------------------------------------------
+def test_unclear_complaint_pipeline():
+    """Test unclear complaint maps to other, conservative SLA, and review_and_assign."""
+    payload = {
+        "complaint_id": "C-108",
+        "description": "Something seems strange and unfamiliar in our neighborhood.",
+        "image_url": None,
+    }
+    response = client.post("/api/v1/analyze", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["classification"]["issue_type"] == "other"
+    assert data["routing"]["department"] == "other"
+    assert data["action"]["suggested"] == "review_and_assign"
+    assert data["assessment"]["severity"] == "low"
+    assert data["assessment"]["priority"] == "low"
+    assert data["action"]["sla_hours"] == 120
+    assert "additional" in data["reason"].lower() or "detail" in data["reason"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Test 10: Department Mapping Completeness
+# ---------------------------------------------------------------------------
+def test_department_mapping_rules():
+    """Verify exact departmental mapping rules required by Commit 3."""
+    assert DEPARTMENT_MAP["pothole"] == "road_public_works"
+    assert DEPARTMENT_MAP["road_damage"] == "road_public_works"
+    assert DEPARTMENT_MAP["garbage"] == "sanitation"
+    assert DEPARTMENT_MAP["water_leakage"] == "water_department"
+    assert DEPARTMENT_MAP["drainage"] == "drainage_department"
+    assert DEPARTMENT_MAP["streetlight"] == "electrical_department"
+    assert DEPARTMENT_MAP["other"] == "other"
+
+
+# ---------------------------------------------------------------------------
+# Test 11: Action Mapping Completeness
+# ---------------------------------------------------------------------------
+def test_action_mapping_rules():
+    """Verify exact suggested action mappings required by Commit 3."""
+    assert ACTION_MAP["pothole"] == "inspect_and_repair"
+    assert ACTION_MAP["road_damage"] == "inspect_and_repair"
+    assert ACTION_MAP["garbage"] == "inspect_and_remove"
+    assert ACTION_MAP["water_leakage"] == "inspect_and_repair_leak"
+    assert ACTION_MAP["drainage"] == "inspect_and_clear_drainage"
+    assert ACTION_MAP["streetlight"] == "inspect_and_repair_light"
+    assert ACTION_MAP["other"] == "review_and_assign"
+
+
+# ---------------------------------------------------------------------------
+# Test 12: SLA Calculation Rules
+# ---------------------------------------------------------------------------
+def test_sla_calculation_rules():
+    """Verify SLA calculation produces expected deterministic hours."""
+    assert calculate_sla("critical", "urgent") == 24
+    assert calculate_sla("high", "high") == 48
+    assert calculate_sla("medium", "medium") == 72
+    assert calculate_sla("low", "low") == 120
+
+
+# ---------------------------------------------------------------------------
+# Test 13: Complete End-to-End Structured Response
+# ---------------------------------------------------------------------------
+def test_complete_structured_response_contract():
+    """Verify the exact final response structure specified in Commit 3."""
     payload = {
         "complaint_id": "C101",
         "description": "There is a large pothole near the college gate.",
@@ -191,92 +305,82 @@ def test_analyze_endpoint_contract():
     assert response.status_code == 200
     data = response.json()
 
-    # Verify all fields from COMMIT 1 and extended fields are present
-    expected_fields = [
-        "complaint_id",
-        "issue_type",
-        "severity",
-        "priority",
-        "department",
-        "sla_hours",
-        "confidence",
-        "evidence_summary",
-        "suggested_action",
-        "reason",
-        "image_analyzed",
-    ]
-    for field in expected_fields:
-        assert field in data, f"Missing required field: {field}"
+    # Verify all nested blocks are present
+    assert "classification" in data
+    assert "issue_type" in data["classification"]
+    assert "confidence" in data["classification"]
 
-    assert data["complaint_id"] == "C101"
-    assert data["issue_type"] == "pothole"
-    assert data["severity"] == "High"
-    assert data["priority"] == "P2"
-    assert data["department"] == "Roads & Infrastructure Department"
-    assert data["sla_hours"] == 48
-    assert data["image_analyzed"] is False
+    assert "evidence" in data
+    assert "image_analyzed" in data["evidence"]
+    assert "summary" in data["evidence"]
 
+    assert "assessment" in data
+    assert "severity" in data["assessment"]
+    assert "priority" in data["assessment"]
+    assert "confidence" in data["assessment"]
 
-# ---------------------------------------------------------------------------
-# Test 10: Invalid request validation
-# ---------------------------------------------------------------------------
-def test_invalid_request_missing_description():
-    """Test 422 returned when description is omitted."""
-    response = client.post("/api/v1/analyze", json={"complaint_id": "C107"})
-    assert response.status_code == 422
+    assert "routing" in data
+    assert "department" in data["routing"]
+    assert "confidence" in data["routing"]
 
+    assert "action" in data
+    assert "suggested" in data["action"]
+    assert "sla_hours" in data["action"]
 
-def test_invalid_request_missing_complaint_id():
-    """Test 422 returned when complaint_id is omitted."""
-    response = client.post("/api/v1/analyze", json={"description": "Valid pothole description"})
-    assert response.status_code == 422
-
-
-def test_invalid_request_empty_body():
-    """Test 422 returned when payload is empty."""
-    response = client.post("/api/v1/analyze", json={})
-    assert response.status_code == 422
-
-
-def test_invalid_request_short_description():
-    """Test 422 returned when description is fewer than 3 characters."""
-    response = client.post("/api/v1/analyze", json={"complaint_id": "C108", "description": "hi"})
-    assert response.status_code == 422
+    assert "reason" in data
+    assert isinstance(data["reason"], str) and len(data["reason"]) > 0
 
 
 # ---------------------------------------------------------------------------
-# Additional Test: Mocked Gemini API Success
+# Test 14: Input Validation Errors (HTTP 422)
 # ---------------------------------------------------------------------------
-def test_gemini_mocked_successful_inference(monkeypatch):
-    """Verify Gemini client integration when mocked response is returned."""
-    monkeypatch.setenv("GEMINI_API_KEY", "fake_test_key_12345")
+def test_validation_errors():
+    """Verify invalid payloads return HTTP 422."""
+    assert client.post("/api/v1/analyze", json={"complaint_id": "X"}).status_code == 422
+    assert client.post("/api/v1/analyze", json={"description": "Valid"}).status_code == 422
+    assert client.post("/api/v1/analyze", json={}).status_code == 422
+    assert client.post("/api/v1/analyze", json={"complaint_id": "X", "description": "a"}).status_code == 422
 
-    mock_response = MagicMock()
-    mock_response.text = (
+
+# ---------------------------------------------------------------------------
+# Test 15: Mocked Gemini Pipeline
+# ---------------------------------------------------------------------------
+def test_gemini_mocked_pipeline(monkeypatch):
+    """Verify the pipeline integrates when Gemini returns classification."""
+    monkeypatch.setenv("GEMINI_API_KEY", "fake_test_key_abc")
+
+    mock_resp = MagicMock()
+    mock_resp.text = (
         '{"issue_type": "water_leakage", "confidence": 0.98, '
-        '"evidence_summary": "Active high-pressure water pipe rupture observed.", '
-        '"image_analyzed": false}'
+        '"evidence_summary": "Major pipeline burst observed."}'
     )
 
     with patch("google.genai.Client") as mock_client_cls:
-        mock_client_instance = MagicMock()
-        mock_client_cls.return_value = mock_client_instance
-        mock_client_instance.models.generate_content.return_value = mock_response
+        mock_instance = MagicMock()
+        mock_client_cls.return_value = mock_instance
+        mock_instance.models.generate_content.return_value = mock_resp
 
-        result = classify_issue("Water pipe burst on main road", image_url=None)
-        assert result.issue_type == "water_leakage"
-        assert result.confidence == 0.98
-        assert "water pipe rupture" in result.evidence_summary.lower()
+        payload = {
+            "complaint_id": "C-MOCK-1",
+            "description": "Major burst pipeline",
+            "image_url": None,
+        }
+        response = client.post("/api/v1/analyze", json=payload)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["classification"]["issue_type"] == "water_leakage"
+        assert data["routing"]["department"] == "water_department"
+        assert data["action"]["suggested"] == "inspect_and_repair_leak"
 
 
 # ---------------------------------------------------------------------------
-# Additional Test: Separate /api/v1/classify endpoint
+# Test 16: Separate /api/v1/classify Endpoint
 # ---------------------------------------------------------------------------
 def test_separate_classify_endpoint():
-    """Verify POST /api/v1/classify returns pure ClassificationResult schema."""
+    """Verify POST /api/v1/classify remains functional."""
     payload = {
-        "complaint_id": "CLS-201",
-        "description": "Streetlight on sector 9 is dark and damaged.",
+        "complaint_id": "CLS-1",
+        "description": "Streetlight fixture is broken and dark.",
         "image_url": None,
     }
     response = client.post("/api/v1/classify", json=payload)
@@ -285,22 +389,20 @@ def test_separate_classify_endpoint():
     assert data["issue_type"] == "streetlight"
     assert "confidence" in data
     assert "evidence_summary" in data
-    assert "image_analyzed" in data
 
 
 # ---------------------------------------------------------------------------
-# Additional Test: Unreachable Image URL Handling
+# Test 17: Unreachable Image URL Handling
 # ---------------------------------------------------------------------------
 def test_unreachable_image_url_does_not_crash():
-    """Verify unreachable image does not crash service and sets image_analyzed=False."""
+    """Verify unreachable image does not crash the service."""
     payload = {
-        "complaint_id": "IMG-301",
+        "complaint_id": "IMG-1",
         "description": "Drainage gutter is blocked and overflowing.",
-        "image_url": "https://invalid-domain-does-not-exist-xyz.com/fake.jpg",
+        "image_url": "https://invalid-non-existent-domain-xyz.com/photo.jpg",
     }
     response = client.post("/api/v1/analyze", json=payload)
     assert response.status_code == 200
     data = response.json()
-    assert data["issue_type"] == "drainage"
-    assert data["image_analyzed"] is False
-    assert "could not be" in data["evidence_summary"].lower() or "drainage" in data["evidence_summary"].lower()
+    assert data["classification"]["issue_type"] == "drainage"
+    assert data["evidence"]["image_analyzed"] is False

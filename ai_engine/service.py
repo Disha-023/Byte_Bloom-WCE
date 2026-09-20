@@ -1,103 +1,85 @@
 """
-Service layer for AI Intelligence Module.
-Orchestrates civic issue classification and triage response construction.
-Maintains full backwards compatibility with COMMIT 1.
+Service layer for AI Intelligence Module (Commit 3).
+Orchestrates civic issue classification, evidence analysis, severity/priority assessment,
+department routing, suggested remedial actions, and SLA estimation.
+Produces structured nested outputs while preserving top-level backwards compatibility.
 """
 
-from typing import Dict, Any
-
 try:
-    from .schemas import AnalyzeRequest, AnalyzeResponse, SupportedCategory
+    from .schemas import (
+        AnalyzeRequest,
+        AnalyzeResponse,
+        ClassificationBlock,
+        EvidenceBlock,
+    )
     from .classifier import classify_issue
+    from .triage import evaluate_triage
 except (ImportError, ValueError):
-    from schemas import AnalyzeRequest, AnalyzeResponse, SupportedCategory
+    from schemas import (
+        AnalyzeRequest,
+        AnalyzeResponse,
+        ClassificationBlock,
+        EvidenceBlock,
+    )
     from classifier import classify_issue
-
-# Baseline department and triage mapping for controlled categories
-CATEGORY_METADATA: Dict[SupportedCategory, Dict[str, Any]] = {
-    "pothole": {
-        "severity": "High",
-        "priority": "P2",
-        "department": "Roads & Infrastructure Department",
-        "sla_hours": 48,
-        "suggested_action": "Dispatch road inspection team.",
-        "reason": "The reported road damage may create a safety risk.",
-    },
-    "road_damage": {
-        "severity": "High",
-        "priority": "P2",
-        "department": "Roads & Infrastructure Department",
-        "sla_hours": 48,
-        "suggested_action": "Dispatch road repair crew for asphalt resurfacing.",
-        "reason": "Road surface damage poses risk of vehicle accidents and damage.",
-    },
-    "garbage": {
-        "severity": "Medium",
-        "priority": "P3",
-        "department": "Solid Waste Management Division",
-        "sla_hours": 24,
-        "suggested_action": "Schedule garbage compactor truck and sanitary worker clearance.",
-        "reason": "Accumulated waste creates sanitation and public health risks.",
-    },
-    "water_leakage": {
-        "severity": "High",
-        "priority": "P2",
-        "department": "Water Supply & Sewerage Board",
-        "sla_hours": 24,
-        "suggested_action": "Isolate pipeline section and dispatch plumbing repair unit.",
-        "reason": "Active water leakage causes potable water wastage and road foundation weakening.",
-    },
-    "drainage": {
-        "severity": "High",
-        "priority": "P2",
-        "department": "Water Supply & Sewerage Board",
-        "sla_hours": 24,
-        "suggested_action": "Dispatch jetting machine to unclog drainage lines.",
-        "reason": "Blocked drainage can lead to wastewater overflow and urban flooding.",
-    },
-    "streetlight": {
-        "severity": "Medium",
-        "priority": "P3",
-        "department": "Electrical Engineering & Street Lighting",
-        "sla_hours": 72,
-        "suggested_action": "Dispatch electrical technician to test fixture wiring and replace lamp.",
-        "reason": "Inadequate street lighting impairs nighttime pedestrian and vehicular visibility.",
-    },
-    "other": {
-        "severity": "Medium",
-        "priority": "P3",
-        "department": "Municipal Public Works Department",
-        "sla_hours": 48,
-        "suggested_action": "Initiate preliminary site survey by local ward inspector.",
-        "reason": "General civic grievance requiring on-ground verification.",
-    },
-}
+    from triage import evaluate_triage
 
 
 def analyze_complaint(request: AnalyzeRequest) -> AnalyzeResponse:
     """
-    Analyzes a civic complaint by running classification (Gemini or fallback),
-    and assembling the structured triage response.
+    Complete AI pipeline:
+    citizen complaint
+    → text evidence
+    → optional image evidence
+    → Gemini / fallback classification
+    → severity assessment
+    → priority assessment
+    → department routing
+    → suggested action
+    → SLA recommendation
+    → structured JSON response
     """
-    # Run separate classification service
+    # Step 1: Classification and evidence analysis
     classification = classify_issue(
         description=request.description,
         image_url=request.image_url,
     )
 
-    issue_type = classification.issue_type
-    meta = CATEGORY_METADATA.get(issue_type, CATEGORY_METADATA["other"])
+    # Step 2: Triage assessment, department routing, action, and SLA
+    assessment_block, routing_block, action_block, reason = evaluate_triage(
+        issue_type=classification.issue_type,
+        description=request.description,
+        evidence_summary=classification.evidence_summary,
+    )
 
+    # Step 3: Build structured blocks
+    classification_block = ClassificationBlock(
+        issue_type=classification.issue_type,
+        confidence=classification.confidence,
+    )
+
+    evidence_block = EvidenceBlock(
+        image_analyzed=classification.image_analyzed,
+        summary=classification.evidence_summary,
+    )
+
+    # Step 4: Return full structured response with both nested blocks & flat compatibility
     return AnalyzeResponse(
         complaint_id=request.complaint_id,
-        issue_type=issue_type,
-        severity=meta["severity"],
-        priority=meta["priority"],
-        department=meta["department"],
-        sla_hours=meta["sla_hours"],
+        classification=classification_block,
+        evidence=evidence_block,
+        assessment=assessment_block,
+        routing=routing_block,
+        action=action_block,
+        reason=reason,
+        # Flat compatibility fields
+        issue_type=classification.issue_type,
+        severity=assessment_block.severity,
+        priority=assessment_block.priority,
+        department=routing_block.department,
+        sla_hours=action_block.sla_hours,
         confidence=classification.confidence,
         evidence_summary=classification.evidence_summary,
-        suggested_action=meta["suggested_action"],
-        reason=meta["reason"],
+        suggested_action=action_block.suggested,
         image_analyzed=classification.image_analyzed,
     )

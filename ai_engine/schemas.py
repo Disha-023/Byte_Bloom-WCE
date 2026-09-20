@@ -1,6 +1,8 @@
 """
-Data schemas for the AI Intelligence Module.
-Uses Pydantic for strict request and response validation.
+Data schemas for the AI Intelligence Module (Commit 3).
+Defines controlled vocabularies and structured Pydantic models for
+civic issue classification, evidence analysis, triage assessment, department routing,
+suggested actions, and SLA timeframes.
 """
 
 from typing import Literal, Optional
@@ -15,6 +17,32 @@ SupportedCategory = Literal[
     "streetlight",
     "road_damage",
     "other",
+]
+
+# Controlled severity ratings
+SeverityLevel = Literal["low", "medium", "high", "critical"]
+
+# Controlled priority ratings
+PriorityLevel = Literal["low", "medium", "high", "urgent"]
+
+# Controlled municipal departments
+DepartmentType = Literal[
+    "road_public_works",
+    "sanitation",
+    "water_department",
+    "drainage_department",
+    "electrical_department",
+    "other",
+]
+
+# Controlled suggested actions
+SuggestedActionType = Literal[
+    "inspect_and_repair",
+    "inspect_and_remove",
+    "inspect_and_repair_leak",
+    "inspect_and_clear_drainage",
+    "inspect_and_repair_light",
+    "review_and_assign",
 ]
 
 
@@ -43,13 +71,44 @@ class ClassificationResult(BaseModel):
     evidence_summary: str = Field(
         ...,
         description="Short, factual summary of observed evidence without chain-of-thought",
-        examples=["The complaint describes a large road surface depression consistent with a pothole."],
+        examples=["The complaint describes a road surface depression consistent with a pothole."],
     )
     image_analyzed: bool = Field(
         default=False,
         description="Indicates whether image evidence was successfully analyzed",
         examples=[False],
     )
+
+
+class ClassificationBlock(BaseModel):
+    """Nested classification details block."""
+    issue_type: SupportedCategory
+    confidence: float = Field(..., ge=0.0, le=1.0)
+
+
+class EvidenceBlock(BaseModel):
+    """Nested evidence analysis block."""
+    image_analyzed: bool
+    summary: str
+
+
+class AssessmentBlock(BaseModel):
+    """Nested severity and priority triage assessment block."""
+    severity: SeverityLevel
+    priority: PriorityLevel
+    confidence: float = Field(..., ge=0.0, le=1.0)
+
+
+class RoutingBlock(BaseModel):
+    """Nested departmental routing block."""
+    department: DepartmentType
+    confidence: float = Field(..., ge=0.0, le=1.0)
+
+
+class ActionBlock(BaseModel):
+    """Nested remedial action and SLA timeframe block."""
+    suggested: SuggestedActionType
+    sla_hours: int = Field(..., ge=1)
 
 
 class AnalyzeRequest(BaseModel):
@@ -84,16 +143,26 @@ class AnalyzeRequest(BaseModel):
 class AnalyzeResponse(BaseModel):
     """
     Structured schema for AI analysis output.
-    Maintains backwards-compatibility with COMMIT 1 and adds image_analyzed flag.
+    Contains nested blocks matching the Commit 3 specification,
+    while maintaining top-level fields for backwards compatibility with Commit 1 & Commit 2.
     """
     complaint_id: str = Field(..., description="ID of the analyzed complaint")
-    issue_type: SupportedCategory = Field(..., description="Controlled category of civic hazard")
-    severity: str = Field(..., description="Severity level: Low, Medium, High, or Critical")
-    priority: str = Field(..., description="Triage priority ranking: P1, P2, P3, or P4")
-    department: str = Field(..., description="Assigned municipal department responsible for resolution")
-    sla_hours: int = Field(..., ge=1, description="Recommended Service Level Agreement resolution timeframe in hours")
-    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score of the AI classification (0.0 - 1.0)")
-    evidence_summary: str = Field(..., description="Short factual summary of text and image evidence")
-    suggested_action: str = Field(..., description="Recommended immediate remedial action for field crew")
-    reason: str = Field(..., description="Rationale explaining the severity and department routing decisions")
-    image_analyzed: bool = Field(default=False, description="Whether image evidence was processed")
+
+    # Structured Commit 3 nested blocks
+    classification: ClassificationBlock
+    evidence: EvidenceBlock
+    assessment: AssessmentBlock
+    routing: RoutingBlock
+    action: ActionBlock
+    reason: str
+
+    # Backwards-compatible flat fields
+    issue_type: SupportedCategory
+    severity: SeverityLevel
+    priority: PriorityLevel
+    department: DepartmentType
+    sla_hours: int
+    confidence: float
+    evidence_summary: str
+    suggested_action: SuggestedActionType
+    image_analyzed: bool
