@@ -4,7 +4,7 @@ Applies deterministic, evidence-based municipal rules to evaluate
 severity, priority, responsible department, suggested actions, SLA, and reasons.
 """
 
-from typing import Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 try:
     from .schemas import (
@@ -81,9 +81,10 @@ def assess_severity_and_priority(
     issue_type: SupportedCategory,
     description: str,
     evidence_summary: str = "",
+    location_context: Optional[Dict[str, Any]] = None,
 ) -> Tuple[SeverityLevel, PriorityLevel, float, str]:
     """
-    Evaluates complaint text and evidence to determine:
+    Evaluates complaint text, evidence summary, and optional location context to determine:
     (severity, priority, assessment_confidence, reason)
     """
     text = f"{description} {evidence_summary}".lower()
@@ -197,14 +198,17 @@ def evaluate_triage(
     issue_type: SupportedCategory,
     description: str,
     evidence_summary: str = "",
+    location_context: Optional[Dict[str, Any]] = None,
 ) -> Tuple[AssessmentBlock, RoutingBlock, ActionBlock, str]:
     """
     Complete triage evaluator returning typed Assessment, Routing, and Action blocks.
+    Location context is accepted as structured context.
     """
     severity, priority, assess_conf, reason = assess_severity_and_priority(
         issue_type=issue_type,
         description=description,
         evidence_summary=evidence_summary,
+        location_context=location_context,
     )
 
     department = DEPARTMENT_MAP.get(issue_type, "other")

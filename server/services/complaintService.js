@@ -70,6 +70,9 @@ export const submitComplaint = async (complaintData, file = null) => {
     const aiPayload = {
       complaint_id: complaintId,
       description: complaintData.description,
+      latitude: complaintData.latitude !== undefined && complaintData.latitude !== null ? Number(complaintData.latitude) : null,
+      longitude: complaintData.longitude !== undefined && complaintData.longitude !== null ? Number(complaintData.longitude) : null,
+      address: complaintData.address || null,
       image_url: aiImageReference
     };
 

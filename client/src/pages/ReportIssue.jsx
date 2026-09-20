@@ -41,8 +41,9 @@ const INITIAL_FORM_STATE = {
   severity: '',
   address: '',
   additionalLocation: '',
-  mockCoordinates: '',
-  mockLocationUsed: false,
+  latitude: null,
+  longitude: null,
+  locationSource: null,
   imageFile: null,
   imagePreview: null
 };
@@ -51,6 +52,8 @@ export const ReportIssue = () => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState(INITIAL_FORM_STATE);
   const [errors, setErrors] = useState({});
+  const [isLocating, setIsLocating] = useState(false);
+  const [locationError, setLocationError] = useState(null);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState(null);
@@ -72,23 +75,57 @@ export const ReportIssue = () => {
     }
   };
 
-  // Mock Geolocation Handler (Preserved demo coordinates; real browser geolocation will be integrated separately)
+  // Real Browser Geolocation API Handler
   const handleUseMyLocation = () => {
-    const mockCoords = '16.8524, 74.5815';
-    setFormData((prev) => ({
-      ...prev,
-      mockCoordinates: mockCoords,
-      mockLocationUsed: true,
-      address: prev.address ? prev.address : 'Near Central Civic Square, Main Street'
-    }));
+    setLocationError(null);
 
-    if (errors.address) {
-      setErrors((prev) => {
-        const next = { ...prev };
-        delete next.address;
-        return next;
-      });
+    if (!navigator.geolocation) {
+      setLocationError('Geolocation is not supported by this browser. Please enter the issue location manually.');
+      return;
     }
+
+    setIsLocating(true);
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+
+        setFormData((prev) => ({
+          ...prev,
+          latitude: lat,
+          longitude: lng,
+          locationSource: 'gps'
+        }));
+        setIsLocating(false);
+        setLocationError(null);
+
+        if (errors.address) {
+          setErrors((prev) => {
+            const next = { ...prev };
+            delete next.address;
+            return next;
+          });
+        }
+      },
+      (error) => {
+        setIsLocating(false);
+        let message = 'Your current location could not be determined. Please enter the issue address manually.';
+        if (error.code === error.PERMISSION_DENIED) {
+          message = 'Location permission was denied. Please enter the issue address manually.';
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          message = 'Your current location could not be determined. Please enter the issue address manually.';
+        } else if (error.code === error.TIMEOUT) {
+          message = 'Location detection timed out. Please try again or enter the location manually.';
+        }
+        setLocationError(message);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0
+      }
+    );
   };
 
   const handleImageSelected = (file, previewUrl) => {
@@ -131,8 +168,8 @@ export const ReportIssue = () => {
       newErrors.severity = 'Please select the severity.';
     }
 
-    if (!formData.address.trim() && !formData.mockCoordinates) {
-      newErrors.address = 'Please provide the issue location.';
+    if (!formData.address.trim() && (formData.latitude === null || formData.longitude === null)) {
+      newErrors.address = 'Please provide the issue location or detect via GPS.';
     }
 
     setErrors(newErrors);
@@ -155,13 +192,16 @@ export const ReportIssue = () => {
       data.append('description', formData.description);
       data.append('category', formData.category);
       data.append('severity', formData.severity);
-      data.append('address', formData.address);
+      data.append('address', formData.address.trim() || 'GPS Detected Location');
 
       if (formData.additionalLocation) {
         data.append('additionalLocation', formData.additionalLocation);
       }
-      if (formData.mockCoordinates) {
-        data.append('mockCoordinates', formData.mockCoordinates);
+      if (formData.latitude !== null && formData.latitude !== undefined) {
+        data.append('latitude', String(formData.latitude));
+      }
+      if (formData.longitude !== null && formData.longitude !== undefined) {
+        data.append('longitude', String(formData.longitude));
       }
       if (formData.imageFile) {
         data.append('image', formData.imageFile);
@@ -193,6 +233,8 @@ export const ReportIssue = () => {
     }
     setFormData(INITIAL_FORM_STATE);
     setErrors({});
+    setIsLocating(false);
+    setLocationError(null);
     setIsSubmitted(false);
     setIsSubmitting(false);
     setSubmissionError(null);
@@ -346,12 +388,24 @@ export const ReportIssue = () => {
                 <span className="text-slate-500 font-medium">Location:</span>
                 <p className="text-slate-900 font-semibold mt-0.5">
                   {submittedComplaint.address}
-                  {submittedComplaint.latitude && submittedComplaint.longitude && (
-                    <span className="ml-1.5 text-civic-600 font-normal">
-                      ({submittedComplaint.latitude}, {submittedComplaint.longitude})
+                  {submittedComplaint.latitude !== null && submittedComplaint.latitude !== undefined && submittedComplaint.longitude !== null && submittedComplaint.longitude !== undefined && (
+                    <span className="ml-1.5 text-civic-700 font-mono font-normal">
+                      ({Number(submittedComplaint.latitude).toFixed(6)}, {Number(submittedComplaint.longitude).toFixed(6)})
                     </span>
                   )}
                 </p>
+                <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-500">
+                  <span className="font-medium">Source:</span>
+                  {submittedComplaint.latitude !== null && submittedComplaint.latitude !== undefined && submittedComplaint.longitude !== null && submittedComplaint.longitude !== undefined ? (
+                    <span className="inline-flex items-center gap-1 text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded font-semibold text-[10px]">
+                      <Navigation className="w-3 h-3" /> GPS
+                    </span>
+                  ) : (
+                    <span className="text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-[10px]">
+                      Manually provided location
+                    </span>
+                  )}
+                </div>
               </div>
 
               {formData.imagePreview && (
@@ -569,25 +623,60 @@ export const ReportIssue = () => {
                         type="button"
                         variant="secondary"
                         size="md"
-                        icon={Navigation}
+                        icon={isLocating ? undefined : Navigation}
+                        disabled={isLocating || isSubmitting}
                         onClick={handleUseMyLocation}
                         className="sm:w-auto shrink-0"
                       >
-                        Use My Location
+                        {isLocating ? (
+                          <span className="flex items-center gap-1.5">
+                            <svg className="animate-spin h-3.5 w-3.5 text-slate-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                            </svg>
+                            <span>Detecting...</span>
+                          </span>
+                        ) : (
+                          'Use My Location'
+                        )}
                       </Button>
                     </div>
 
-                    {/* Mock Geolocation Indicator */}
-                    {formData.mockLocationUsed && (
-                      <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                          <span>
-                            <strong>Location selected:</strong> Mock coordinates ({formData.mockCoordinates})
-                          </span>
+                    {/* Location Error Notice */}
+                    {locationError && (
+                      <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-start justify-between gap-2">
+                        <div className="flex items-start gap-2">
+                          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-semibold block">Location Notice:</span>
+                            <p className="text-amber-800 text-[11px] mt-0.5">{locationError}</p>
+                          </div>
                         </div>
-                        <span className="text-[10px] bg-emerald-200/60 text-emerald-900 px-2 py-0.5 rounded font-semibold uppercase tracking-wider">
-                          Demo Mock
+                        <button
+                          type="button"
+                          onClick={() => setLocationError(null)}
+                          className="text-amber-600 hover:text-amber-900 p-0.5"
+                          title="Dismiss"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Real GPS Location Indicator */}
+                    {formData.latitude !== null && formData.longitude !== null && (
+                      <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <div>
+                            <span className="font-semibold text-emerald-950 block">✓ Current location detected</span>
+                            <span className="text-[11px] text-emerald-800 font-mono">
+                              Latitude: {Number(formData.latitude).toFixed(6)} | Longitude: {Number(formData.longitude).toFixed(6)}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="text-[10px] bg-emerald-200/80 text-emerald-950 px-2.5 py-1 rounded-full font-bold uppercase tracking-wider">
+                          GPS
                         </span>
                       </div>
                     )}
@@ -665,9 +754,16 @@ export const ReportIssue = () => {
 
                   <div className="flex justify-between items-start gap-2 border-b border-slate-200/70 pb-2">
                     <span className="text-slate-500 font-medium">Location:</span>
-                    <span className="font-semibold text-slate-800 text-right truncate max-w-[170px]">
-                      {formData.address || (formData.mockCoordinates ? `Mock (${formData.mockCoordinates})` : <span className="text-slate-400 font-normal italic">Not provided</span>)}
-                    </span>
+                    <div className="text-right max-w-[180px]">
+                      <span className="font-semibold text-slate-800 block truncate">
+                        {formData.address || (formData.latitude !== null ? 'GPS Coordinates' : <span className="text-slate-400 font-normal italic">Not provided</span>)}
+                      </span>
+                      {formData.latitude !== null && formData.longitude !== null && (
+                        <span className="text-[10px] text-emerald-700 font-mono block">
+                          {Number(formData.latitude).toFixed(4)}, {Number(formData.longitude).toFixed(4)} (GPS)
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex justify-between items-center gap-2">

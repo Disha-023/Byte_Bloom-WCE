@@ -167,11 +167,75 @@ describe('Smart Civic Issue Resolution - Complaint API & AI Triage Integration',
       assert.strictEqual(res.body.success, false);
       assert.ok(res.body.errors.some((e) => e.includes('Invalid severity level')));
     });
+
+    it('should return 400 when latitude is out of bounds (> 90 or < -90)', async () => {
+      const res = await request(app)
+        .post('/api/complaints')
+        .send({
+          title: 'Road pothole',
+          description: 'Large pothole on the street causing hazards',
+          category: 'Road & Potholes',
+          address: 'Main street',
+          latitude: 100,
+          longitude: 74.5815
+        });
+
+      assert.strictEqual(res.status, 400);
+      assert.strictEqual(res.body.success, false);
+      assert.ok(res.body.errors.some((e) => e.includes('Latitude must be between -90 and 90')));
+    });
+
+    it('should return 400 when longitude is out of bounds (> 180 or < -180)', async () => {
+      const res = await request(app)
+        .post('/api/complaints')
+        .send({
+          title: 'Road pothole',
+          description: 'Large pothole on the street causing hazards',
+          category: 'Road & Potholes',
+          address: 'Main street',
+          latitude: 16.8524,
+          longitude: 200
+        });
+
+      assert.strictEqual(res.status, 400);
+      assert.strictEqual(res.body.success, false);
+      assert.ok(res.body.errors.some((e) => e.includes('Longitude must be between -180 and 180')));
+    });
+
+    it('should return 400 when only one coordinate is provided', async () => {
+      const res1 = await request(app)
+        .post('/api/complaints')
+        .send({
+          title: 'Road pothole',
+          description: 'Large pothole on the street causing hazards',
+          category: 'Road & Potholes',
+          address: 'Main street',
+          latitude: 16.8524
+        });
+
+      assert.strictEqual(res1.status, 400);
+      assert.strictEqual(res1.body.success, false);
+      assert.ok(res1.body.errors.some((e) => e.includes('Both latitude and longitude must be provided together')));
+
+      const res2 = await request(app)
+        .post('/api/complaints')
+        .send({
+          title: 'Road pothole',
+          description: 'Large pothole on the street causing hazards',
+          category: 'Road & Potholes',
+          address: 'Main street',
+          longitude: 74.5815
+        });
+
+      assert.strictEqual(res2.status, 400);
+      assert.strictEqual(res2.body.success, false);
+      assert.ok(res2.body.errors.some((e) => e.includes('Both latitude and longitude must be provided together')));
+    });
   });
 
   // Test 2: Successful Submission & AI Analysis Persistence
   describe('POST /api/complaints - Successful Submission Flow', () => {
-    it('should create complaint in PostgreSQL, call AI Engine, persist AI results, and return structured complaint', async () => {
+    it('should accept real coordinates, persist in PostgreSQL, pass coordinates to AI Engine, and return structured complaint', async () => {
       // Mock AI engine /api/v1/analyze response
       let aiCallMade = false;
       let aiPayload = null;
@@ -207,9 +271,10 @@ describe('Smart Civic Issue Resolution - Complaint API & AI Triage Integration',
         description: 'Large pothole causing dangerous conditions near the college entrance.',
         category: 'Road & Potholes',
         severity: 'high',
-        address: 'Near Central Civic Square',
-        additionalLocation: 'Opposite to campus gate 2',
-        mockCoordinates: '16.8524, 74.5815'
+        address: 'Near College Gate',
+        additionalLocation: 'Opposite the main entrance',
+        latitude: 16.8524,
+        longitude: 74.5815
       };
 
       const res = await request(app)
@@ -225,19 +290,24 @@ describe('Smart Civic Issue Resolution - Complaint API & AI Triage Integration',
       // Verify backend-generated complaint ID
       assert.match(complaint.complaint_id, /^CIV-\d{6}$/);
 
-      // Verify initial fields
+      // Verify initial fields and location coordinates
       assert.strictEqual(complaint.title, 'Large pothole near college gate');
       assert.strictEqual(complaint.category, 'Road & Potholes');
       assert.strictEqual(complaint.citizen_severity, 'high');
-      assert.strictEqual(complaint.address, 'Near Central Civic Square');
-      assert.strictEqual(complaint.additional_location, 'Opposite to campus gate 2');
+      assert.strictEqual(complaint.address, 'Near College Gate');
+      assert.strictEqual(complaint.additional_location, 'Opposite the main entrance');
       assert.strictEqual(complaint.status, 'Pending');
       assert.strictEqual(complaint.latitude, 16.8524);
       assert.strictEqual(complaint.longitude, 74.5815);
 
-      // Verify AI engine call and persisted fields
+      // Verify AI engine call received coordinates and address
       assert.strictEqual(aiCallMade, true);
       assert.strictEqual(aiPayload.complaint_id, complaint.complaint_id);
+      assert.strictEqual(aiPayload.latitude, 16.8524);
+      assert.strictEqual(aiPayload.longitude, 74.5815);
+      assert.strictEqual(aiPayload.address, 'Near College Gate');
+
+      // Verify persisted AI fields
       assert.strictEqual(complaint.ai_analysis_status, 'completed');
       assert.strictEqual(complaint.issue_type, 'pothole');
       assert.strictEqual(complaint.ai_severity, 'high');
@@ -249,7 +319,54 @@ describe('Smart Civic Issue Resolution - Complaint API & AI Triage Integration',
       assert.ok(complaint.evidence_summary.includes('pothole'));
     });
 
-    it('should handle AI engine failure gracefully without deleting the complaint', async () => {
+    it('should NOT insert mock coordinates when latitude and longitude are omitted', async () => {
+      let aiPayload = null;
+      global.fetch = async (url, options) => {
+        if (url.includes('/api/v1/analyze')) {
+          aiPayload = JSON.parse(options.body);
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              complaint_id: aiPayload.complaint_id,
+              issue_type: 'garbage',
+              severity: 'medium',
+              priority: 'medium',
+              department: 'sanitation',
+              sla_hours: 72,
+              confidence: 0.90,
+              evidence_summary: 'Waste accumulation reported.',
+              suggested_action: 'inspect_and_remove',
+              reason: 'Waste reported in area.',
+              image_analyzed: false
+            })
+          };
+        }
+        return { ok: false, status: 404 };
+      };
+
+      const payload = {
+        title: 'Uncollected garbage near market',
+        description: 'Garbage has not been collected for two days.',
+        category: 'Garbage & Waste',
+        severity: 'medium',
+        address: 'Market Yard Gate 3'
+      };
+
+      const res = await request(app)
+        .post('/api/complaints')
+        .send(payload);
+
+      assert.strictEqual(res.status, 201);
+      const complaint = res.body.complaint;
+      assert.strictEqual(complaint.latitude, null);
+      assert.strictEqual(complaint.longitude, null);
+      assert.strictEqual(aiPayload.latitude, null);
+      assert.strictEqual(aiPayload.longitude, null);
+      assert.strictEqual(aiPayload.address, 'Market Yard Gate 3');
+    });
+
+    it('should handle AI engine failure gracefully without deleting the complaint or location', async () => {
       // Mock AI engine throwing an error
       global.fetch = async () => {
         throw new Error('AI engine connection refused');
@@ -260,7 +377,9 @@ describe('Smart Civic Issue Resolution - Complaint API & AI Triage Integration',
         description: 'The street light has been completely dark for 3 days.',
         category: 'Streetlight',
         severity: 'medium',
-        address: '5th Avenue, Ward 4'
+        address: '5th Avenue, Ward 4',
+        latitude: 16.8524,
+        longitude: 74.5815
       };
 
       const res = await request(app)
@@ -274,15 +393,19 @@ describe('Smart Civic Issue Resolution - Complaint API & AI Triage Integration',
       assert.ok(complaint);
       assert.match(complaint.complaint_id, /^CIV-\d{6}$/);
 
-      // Verify complaint is preserved with status 'Pending' and ai_analysis_status 'failed'
+      // Verify complaint and location are preserved with status 'Pending' and ai_analysis_status 'failed'
       assert.strictEqual(complaint.status, 'Pending');
       assert.strictEqual(complaint.ai_analysis_status, 'failed');
       assert.strictEqual(complaint.title, 'Broken streetlight on 5th avenue');
+      assert.strictEqual(complaint.latitude, 16.8524);
+      assert.strictEqual(complaint.longitude, 74.5815);
 
       // Verify it exists in the database
       assert.strictEqual(mockComplaints.length, 1);
       assert.strictEqual(mockComplaints[0].complaint_id, complaint.complaint_id);
       assert.strictEqual(mockComplaints[0].ai_analysis_status, 'failed');
+      assert.strictEqual(mockComplaints[0].latitude, 16.8524);
+      assert.strictEqual(mockComplaints[0].longitude, 74.5815);
     });
   });
 

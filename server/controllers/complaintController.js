@@ -19,8 +19,7 @@ export const submitComplaint = async (req, res, next) => {
       additionalLocation,
       additional_location,
       latitude,
-      longitude,
-      mockCoordinates
+      longitude
     } = req.body;
 
     const errors = [];
@@ -51,30 +50,44 @@ export const submitComplaint = async (req, res, next) => {
       errors.push(`Invalid severity level '${inputSeverity}'. Must be one of: ${VALID_SEVERITIES.join(', ')}.`);
     }
 
+    // Coordinate validation & normalization
+    const hasLat = latitude !== undefined && latitude !== null && String(latitude).trim() !== '';
+    const hasLng = longitude !== undefined && longitude !== null && String(longitude).trim() !== '';
+
+    let parsedLat = null;
+    let parsedLng = null;
+
+    if (hasLat && !hasLng) {
+      errors.push('Both latitude and longitude must be provided together.');
+    } else if (!hasLat && hasLng) {
+      errors.push('Both latitude and longitude must be provided together.');
+    } else if (hasLat && hasLng) {
+      const numLat = Number(latitude);
+      const numLng = Number(longitude);
+
+      if (isNaN(numLat)) {
+        errors.push('Latitude must be a valid number.');
+      } else if (numLat < -90 || numLat > 90) {
+        errors.push('Latitude must be between -90 and 90.');
+      } else {
+        parsedLat = numLat;
+      }
+
+      if (isNaN(numLng)) {
+        errors.push('Longitude must be a valid number.');
+      } else if (numLng < -180 || numLng > 180) {
+        errors.push('Longitude must be between -180 and 180.');
+      } else {
+        parsedLng = numLng;
+      }
+    }
+
     if (errors.length > 0) {
       return res.status(400).json({
         success: false,
         message: 'Validation failed',
         errors
       });
-    }
-
-    // Location normalization:
-    // NOTE: Real browser geolocation will be integrated in a future phase.
-    // The coordinates (e.g. 16.8524, 74.5815) are preserved as development/demo coordinates.
-    let parsedLat = latitude !== undefined && latitude !== '' ? parseFloat(latitude) : null;
-    let parsedLng = longitude !== undefined && longitude !== '' ? parseFloat(longitude) : null;
-
-    if ((parsedLat === null || isNaN(parsedLat)) && mockCoordinates) {
-      const parts = mockCoordinates.split(',').map((p) => p.trim());
-      if (parts.length === 2) {
-        const latCandidate = parseFloat(parts[0]);
-        const lngCandidate = parseFloat(parts[1]);
-        if (!isNaN(latCandidate) && !isNaN(lngCandidate)) {
-          parsedLat = latCandidate;
-          parsedLng = lngCandidate;
-        }
-      }
     }
 
     const complaintData = {
@@ -84,8 +97,8 @@ export const submitComplaint = async (req, res, next) => {
       citizen_severity: inputSeverity || 'medium',
       address: address.trim(),
       additional_location: (additional_location || additionalLocation || '').trim() || null,
-      latitude: !isNaN(parsedLat) ? parsedLat : null,
-      longitude: !isNaN(parsedLng) ? parsedLng : null
+      latitude: parsedLat,
+      longitude: parsedLng
     };
 
     const file = req.file || null;

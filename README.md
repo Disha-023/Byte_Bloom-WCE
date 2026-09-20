@@ -129,19 +129,21 @@ Smart Civic Issue Resolution Agent/
 The platform provides an integrated, end-to-end pipeline connecting citizen reporting to municipal AI triage and PostgreSQL persistence:
 
 ```text
+Citizen clicks "Use My Location" (Browser navigator.geolocation)
+      ↓ (Real latitude & longitude coordinates captured)
 Citizen Report Form (React / ReportIssue.jsx)
-      ↓ (POST /api/complaints with multipart FormData)
+      ↓ (POST /api/complaints with multipart FormData: title, description, category, severity, address, latitude, longitude, image)
 Express Complaint API Gateway (server/server.js)
-      ↓
+      ↓ (Validates coordinate ranges -90..90, -180..180 & required fields)
 PostgreSQL Persistence (complaints table, Status: 'Pending', CIV-XXXXXX)
-      ↓ (POST /api/v1/analyze with complaint_id, description, image_url)
+      ↓ (POST /api/v1/analyze with complaint_id, description, latitude, longitude, address, image_url)
 FastAPI AI Engine (ai_engine/main.py)
-      ↓ (Returns issue_type, severity, priority, department, sla_hours, etc.)
+      ↓ (Evaluates triage with structured location context, returns issue_type, severity, priority, department, sla_hours)
 Persist AI Analysis in PostgreSQL (ai_analysis_status: 'completed')
       ↓
 Return Complete Structured Complaint Record to React
       ↓
-React Displays Real Submitted Complaint & AI Triage Results
+React Displays Real Submitted Complaint (Address, Coordinates, GPS Source) & AI Triage Results
 ```
 
 ---
@@ -156,9 +158,10 @@ React Displays Real Submitted Complaint & AI Triage Results
   - `description` (string, required, min 10 chars): Detailed description.
   - `category` (string, required): Civic issue category (e.g. `Road & Potholes`).
   - `severity` (string, required): Citizen-assessed urgency (`low`, `medium`, `high`, `critical`).
-  - `address` (string, required): Landmark, street, or address description.
+  - `address` (string, required): Street name, area, or landmark description.
   - `additionalLocation` (string, optional): Extra directional landmark.
-  - `mockCoordinates` / `latitude`, `longitude` (optional): Coordinates.
+  - `latitude` (number, optional): GPS latitude (-90 to 90). Must be paired with `longitude`.
+  - `longitude` (number, optional): GPS longitude (-180 to 180). Must be paired with `latitude`.
   - `image` (file, optional): JPEG, PNG, or WebP evidence image (up to 10MB).
 - **Response**: `201 Created`
   ```json
@@ -170,10 +173,10 @@ React Displays Real Submitted Complaint & AI Triage Results
       "description": "Large pothole causing dangerous conditions near the college entrance.",
       "category": "Road & Potholes",
       "citizen_severity": "high",
-      "address": "Near Central Civic Square",
-      "additional_location": "Opposite to campus gate 2",
-      "latitude": 16.8524,
-      "longitude": 74.5815,
+      "address": "Near College Gate",
+      "additional_location": "Opposite the main entrance",
+      "latitude": 16.852400,
+      "longitude": 74.581500,
       "status": "Pending",
       "ai_analysis_status": "completed",
       "issue_type": "pothole",
@@ -192,18 +195,34 @@ React Displays Real Submitted Complaint & AI Triage Results
   }
   ```
 
-### 2. Get All Complaints
+### 2. AI Engine Analysis
+- **`POST /api/v1/analyze`**
+- **Content-Type**: `application/json`
+- **Request Body**:
+  ```json
+  {
+    "complaint_id": "CIV-102431",
+    "description": "Large pothole near college gate",
+    "latitude": 16.8524,
+    "longitude": 74.5815,
+    "address": "Near College Gate",
+    "image_url": "/path/to/evidence.jpg"
+  }
+  ```
+- *Note*: The AI analysis pipeline receives structured `location_context` (coordinates and human-readable address). The current deterministic triage engine classifies issues based on issue text and image evidence; it does not perform advanced GIS geospatial boundary calculations.
+
+### 3. Get All Complaints
 - **`GET /api/complaints`**
 - **Response**: `200 OK`
   ```json
   {
     "success": true,
     "count": 1,
-    "complaints": [ ... ]
+    "complaint": [ ... ]
   }
   ```
 
-### 3. Get Single Complaint by ID
+### 4. Get Single Complaint by ID
 - **`GET /api/complaints/:complaintId`**
 - **Response**: `200 OK` or `404 Not Found`
 

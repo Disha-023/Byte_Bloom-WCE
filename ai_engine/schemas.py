@@ -118,6 +118,9 @@ class AnalyzeRequest(BaseModel):
     {
       "complaint_id": "C101",
       "description": "There is a large pothole near the college gate.",
+      "latitude": 16.8524,
+      "longitude": 74.5815,
+      "address": "Near College Gate",
       "image_url": null
     }
     """
@@ -132,6 +135,25 @@ class AnalyzeRequest(BaseModel):
         min_length=3,
         description="Citizen's text description of the civic issue",
         examples=["There is a large pothole near the college gate."],
+    )
+    latitude: Optional[float] = Field(
+        default=None,
+        ge=-90,
+        le=90,
+        description="Latitude of the reported civic issue",
+        examples=[16.8524],
+    )
+    longitude: Optional[float] = Field(
+        default=None,
+        ge=-180,
+        le=180,
+        description="Longitude of the reported civic issue",
+        examples=[74.5815],
+    )
+    address: Optional[str] = Field(
+        default=None,
+        description="Human-readable location supplied with the complaint",
+        examples=["Near College Gate"],
     )
     image_url: Optional[str] = Field(
         default=None,

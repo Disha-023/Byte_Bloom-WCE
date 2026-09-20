@@ -406,3 +406,59 @@ def test_unreachable_image_url_does_not_crash():
     data = response.json()
     assert data["classification"]["issue_type"] == "drainage"
     assert data["evidence"]["image_analyzed"] is False
+
+
+# ---------------------------------------------------------------------------
+# Test 18: Analyze Request with Real Location Coordinates & Address
+# ---------------------------------------------------------------------------
+def test_analyze_with_location_payload():
+    """Verify /api/v1/analyze accepts latitude, longitude, and address, and succeeds."""
+    payload = {
+        "complaint_id": "C-LOC-101",
+        "description": "Large pothole near college gate causing traffic issues.",
+        "latitude": 16.8524,
+        "longitude": 74.5815,
+        "address": "Near College Gate, Main Road",
+        "image_url": None,
+    }
+    response = client.post("/api/v1/analyze", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["complaint_id"] == "C-LOC-101"
+    assert data["classification"]["issue_type"] == "pothole"
+    assert data["assessment"]["severity"] == "high"
+    assert data["routing"]["department"] == "road_public_works"
+
+
+# ---------------------------------------------------------------------------
+# Test 19: Location Boundary Validation Errors (HTTP 422)
+# ---------------------------------------------------------------------------
+def test_analyze_location_validation_errors():
+    """Verify invalid latitude (>90 or <-90) and longitude (>180 or <-180) are rejected."""
+    # Latitude > 90
+    resp_lat_high = client.post(
+        "/api/v1/analyze",
+        json={"complaint_id": "C-VAL-1", "description": "Pothole on road", "latitude": 95.0, "longitude": 74.5},
+    )
+    assert resp_lat_high.status_code == 422
+
+    # Latitude < -90
+    resp_lat_low = client.post(
+        "/api/v1/analyze",
+        json={"complaint_id": "C-VAL-2", "description": "Pothole on road", "latitude": -91.5, "longitude": 74.5},
+    )
+    assert resp_lat_low.status_code == 422
+
+    # Longitude > 180
+    resp_lng_high = client.post(
+        "/api/v1/analyze",
+        json={"complaint_id": "C-VAL-3", "description": "Pothole on road", "latitude": 16.5, "longitude": 185.0},
+    )
+    assert resp_lng_high.status_code == 422
+
+    # Longitude < -180
+    resp_lng_low = client.post(
+        "/api/v1/analyze",
+        json={"complaint_id": "C-VAL-4", "description": "Pothole on road", "latitude": 16.5, "longitude": -185.0},
+    )
+    assert resp_lng_low.status_code == 422

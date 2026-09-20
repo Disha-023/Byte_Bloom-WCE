@@ -45,11 +45,19 @@ def analyze_complaint(request: AnalyzeRequest) -> AnalyzeResponse:
         image_url=request.image_url,
     )
 
+    # Assemble location context from request
+    location_context = {
+        "latitude": request.latitude,
+        "longitude": request.longitude,
+        "address": request.address,
+    }
+
     # Step 2: Triage assessment, department routing, action, and SLA
     assessment_block, routing_block, action_block, reason = evaluate_triage(
         issue_type=classification.issue_type,
         description=request.description,
         evidence_summary=classification.evidence_summary,
+        location_context=location_context,
     )
 
     # Step 3: Build structured blocks
