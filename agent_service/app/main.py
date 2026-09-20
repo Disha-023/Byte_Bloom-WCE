@@ -4,14 +4,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .routes import health_router, monitoring_router
+from .routes import health_router, monitoring_router, agent_router
 
 settings = get_settings()
 
 app = FastAPI(
     title="Smart Civic Agent Service",
-    description="Agentic Complaint Monitoring & SLA Enforcement Service (Member 4 - Commit 1 Foundation)",
-    version="1.0.0",
+    description="Agentic Complaint Monitoring & SLA Enforcement Service (Member 4 - Commit 2 Agentic Workflow)",
+    version="1.1.0",
 )
 
 # Enable CORS to allow secure communication across local microservices and frontend
@@ -26,6 +26,7 @@ app.add_middleware(
 # Register routers
 app.include_router(health_router)
 app.include_router(monitoring_router)
+app.include_router(agent_router)
 
 
 @app.get("/", tags=["System"])
@@ -35,11 +36,12 @@ def root():
         "service": "Smart Civic Agent Service",
         "member": "Member 4 - Agentic Complaint Monitoring",
         "status": "online",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "endpoints": {
             "health": "/health",
             "get_monitor": "/monitor/{complaint_id}",
             "check_monitor": "/monitor/check",
+            "run_agent": "/agent/run/{complaint_id}",
         },
     }
 

@@ -6,10 +6,12 @@ from .monitoring import (
     HealthResponse,
     SLAStatusType,
 )
+from .agent import AgentRunResponse
 
 __all__ = [
     "ComplaintCheckRequest",
     "ComplaintMonitoringResponse",
     "HealthResponse",
     "SLAStatusType",
+    "AgentRunResponse",
 ]

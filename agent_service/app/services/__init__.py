@@ -8,6 +8,8 @@ from .monitoring_service import (
     check_or_create_complaint,
     build_monitoring_response,
 )
+from .follow_up_service import send_follow_up
+from .escalation_service import escalate_complaint
 
 __all__ = [
     "calculate_deadline",
@@ -16,4 +18,6 @@ __all__ = [
     "get_monitoring_record",
     "check_or_create_complaint",
     "build_monitoring_response",
+    "send_follow_up",
+    "escalate_complaint",
 ]

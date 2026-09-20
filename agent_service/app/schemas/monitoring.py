@@ -78,6 +78,10 @@ class ComplaintMonitoringResponse(BaseModel):
         examples=[123456.0],
     )
     last_checked_at: datetime = Field(..., description="UTC timestamp of the most recent monitoring check")
+    agent_state: Optional[str] = Field(default="MONITORING", description="Internal agent workflow state")
+    follow_up_sent: Optional[bool] = Field(default=False, description="Whether an SLA follow-up has been dispatched")
+    escalated_at: Optional[datetime] = Field(default=None, description="Timestamp when complaint was escalated")
+    last_action_at: Optional[datetime] = Field(default=None, description="Timestamp of the most recent agent action")
     created_at: Optional[datetime] = Field(default=None, description="Complaint creation UTC timestamp")
     updated_at: Optional[datetime] = Field(default=None, description="Monitoring record last updated UTC timestamp")
 

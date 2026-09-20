@@ -10,41 +10,7 @@ from sqlalchemy.pool import StaticPool
 from app.database import Base, get_db
 from app.main import app
 
-# Create in-memory SQLite engine for isolated endpoint testing
-SQLALCHEMY_TEST_DATABASE_URL = "sqlite:///:memory:"
-
-test_engine = create_engine(
-    SQLALCHEMY_TEST_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
-
-
-def override_get_db():
-    """Dependency override providing isolated test database session."""
-    db = TestingSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-app.dependency_overrides[get_db] = override_get_db
-
-
-@pytest.fixture(autouse=True)
-def setup_test_db():
-    """Creates tables before each test and drops them afterwards."""
-    Base.metadata.create_all(bind=test_engine)
-    yield
-    Base.metadata.drop_all(bind=test_engine)
-
-
-@pytest.fixture
-def client():
-    """FastAPI TestClient fixture."""
-    return TestClient(app)
+# Fixtures (client, db_session, setup_test_database) are provided by conftest.py
 
 
 def test_health_endpoint(client):

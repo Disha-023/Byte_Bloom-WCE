@@ -1,7 +1,7 @@
 """SQLAlchemy model for persistent SLA complaint monitoring."""
 
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy import Column, Integer, String, DateTime, Boolean
 from ..database import Base
 
 
@@ -39,6 +39,10 @@ class ComplaintMonitoring(Base):
     sla_hours = Column(Integer, nullable=False)
     deadline = Column(DateTime(timezone=True), nullable=False)
     sla_status = Column(String(32), nullable=False, default="NORMAL")
+    agent_state = Column(String(64), nullable=False, default="MONITORING")
+    follow_up_sent = Column(Boolean, nullable=False, default=False)
+    escalated_at = Column(DateTime(timezone=True), nullable=True)
+    last_action_at = Column(DateTime(timezone=True), nullable=True)
     last_checked_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
