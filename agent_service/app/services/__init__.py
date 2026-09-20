@@ -10,6 +10,13 @@ from .monitoring_service import (
 )
 from .follow_up_service import send_follow_up
 from .escalation_service import escalate_complaint
+from .agent_event_service import record_agent_event, get_complaint_events
+from .notification_service import NotificationService
+from .complaint_data_provider import (
+    ComplaintDataProvider,
+    LocalMonitoringComplaintDataProvider,
+    RemoteAuthorityComplaintDataProvider,
+)
 
 __all__ = [
     "calculate_deadline",
@@ -20,4 +27,10 @@ __all__ = [
     "build_monitoring_response",
     "send_follow_up",
     "escalate_complaint",
+    "record_agent_event",
+    "get_complaint_events",
+    "NotificationService",
+    "ComplaintDataProvider",
+    "LocalMonitoringComplaintDataProvider",
+    "RemoteAuthorityComplaintDataProvider",
 ]

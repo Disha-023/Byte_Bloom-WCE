@@ -19,6 +19,21 @@ class Settings(BaseSettings):
     # When remaining SLA duration drops to or below this percentage, status transitions to WARNING
     SLA_WARNING_THRESHOLD_PERCENT: float = 20.0
 
+    # Notification configuration ('none', 'email', 'twilio')
+    NOTIFICATION_PROVIDER: str = "none"
+
+    # Email / SMTP configuration
+    SMTP_HOST: str | None = None
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str | None = None
+    SMTP_PASSWORD: str | None = None
+    EMAIL_FROM: str = "noreply@civic.local"
+
+    # Twilio configuration
+    TWILIO_ACCOUNT_SID: str | None = None
+    TWILIO_AUTH_TOKEN: str | None = None
+    TWILIO_FROM_NUMBER: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

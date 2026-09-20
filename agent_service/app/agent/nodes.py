@@ -1,4 +1,4 @@
-"""Node functions for LangGraph agent workflow (Commit 2)."""
+"""Node functions for LangGraph agent workflow with Traceability & Notifications (Commit 3)."""
 
 import logging
 from datetime import datetime, timezone
@@ -15,12 +15,14 @@ from ..services.monitoring_service import (
 )
 from ..services.follow_up_service import send_follow_up
 from ..services.escalation_service import escalate_complaint
+from ..services.agent_event_service import record_agent_event
+from ..services.notification_service import NotificationService
 
 logger = logging.getLogger("agent_service.agent_nodes")
 
 
 class AgentNodes:
-    """Encapsulates LangGraph node implementations with database session context."""
+    """Encapsulates LangGraph node implementations with database session, traceability, and notifications."""
 
     def __init__(
         self,
@@ -36,6 +38,7 @@ class AgentNodes:
             if warning_threshold_percent is not None
             else settings.SLA_WARNING_THRESHOLD_PERCENT
         )
+        self.notification_service = NotificationService(settings=settings)
 
     def _get_now(self) -> datetime:
         if self.current_time is not None:
@@ -43,7 +46,7 @@ class AgentNodes:
         return datetime.now(timezone.utc)
 
     def load_complaint(self, state: AgentWorkflowState) -> dict:
-        """Loads complaint monitoring record from PostgreSQL."""
+        """Loads complaint monitoring record from PostgreSQL and logs audit trace."""
         complaint_id = state.get("complaint_id", "")
         logger.info("Agent started for complaint '%s'", complaint_id)
 
@@ -58,6 +61,17 @@ class AgentNodes:
             or getattr(record, "agent_state", "") == "ESCALATED"
         )
         is_res = record.status.strip().lower() == "resolved"
+
+        # Record MONITOR audit event
+        record_agent_event(
+            db=self.db,
+            complaint_id=record.complaint_id,
+            action="MONITOR",
+            reason="Complaint loaded for SLA monitoring",
+            previous_status=record.status,
+            new_status=record.status,
+            details={"sla_hours": record.sla_hours, "deadline": record.deadline.isoformat()},
+        )
 
         return {
             "complaint_id": record.complaint_id,
@@ -84,6 +98,14 @@ class AgentNodes:
         current_status = state.get("current_status", "")
         if current_status.strip().lower() == "resolved" or state.get("is_resolved"):
             logger.info("Complaint '%s' is already resolved; stopping workflow", state.get("complaint_id"))
+            record_agent_event(
+                db=self.db,
+                complaint_id=state.get("complaint_id", ""),
+                action="WORKFLOW_COMPLETED",
+                reason="Complaint is already resolved; workflow completed without action",
+                previous_status=current_status,
+                new_status=current_status,
+            )
             return {
                 "is_resolved": True,
                 "action_taken": "NONE",
@@ -94,7 +116,7 @@ class AgentNodes:
         return {"is_resolved": False}
 
     def calculate_sla(self, state: AgentWorkflowState) -> dict:
-        """Calculates SLA temporal state (NORMAL, WARNING, BREACHED)."""
+        """Calculates SLA temporal state (NORMAL, WARNING, BREACHED) and logs audit events."""
         now = self._get_now()
         deadline = state["deadline"]
         sla_hours = state["sla_hours"]
@@ -117,6 +139,17 @@ class AgentNodes:
             remaining_sec,
         )
 
+        # Record SLA calculation audit event
+        record_agent_event(
+            db=self.db,
+            complaint_id=state["complaint_id"],
+            action="SLA_CALCULATED",
+            reason=f"SLA evaluated to {sla_status} with {remaining_sec:.0f}s remaining",
+            previous_status=state.get("current_status"),
+            new_status=state.get("current_status"),
+            details={"sla_status": sla_status, "remaining_seconds": remaining_sec},
+        )
+
         updates = {
             "sla_status": sla_status,
             "remaining_seconds": remaining_sec,
@@ -127,22 +160,46 @@ class AgentNodes:
             updates["action_taken"] = "NONE"
             updates["decision_reason"] = "SLA is within normal duration; no intervention required."
         elif sla_status == "WARNING":
+            record_agent_event(
+                db=self.db,
+                complaint_id=state["complaint_id"],
+                action="SLA_WARNING",
+                reason=f"SLA warning threshold reached ({remaining_sec:.0f}s remaining)",
+                previous_status=state.get("current_status"),
+                new_status=state.get("current_status"),
+            )
             if state.get("follow_up_sent"):
                 updates["action_taken"] = "NONE"
                 updates["decision_reason"] = "Warning SLA detected but follow-up was already sent; continuing monitoring."
             else:
                 updates["decision_reason"] = "SLA approaching deadline; evaluating follow-up requirement."
         elif sla_status == "BREACHED":
+            record_agent_event(
+                db=self.db,
+                complaint_id=state["complaint_id"],
+                action="SLA_BREACHED",
+                reason=f"SLA deadline breached by {abs(remaining_sec):.0f}s",
+                previous_status=state.get("current_status"),
+                new_status=state.get("current_status"),
+            )
             updates["decision_reason"] = "SLA deadline has been breached; evaluating escalation."
 
         return updates
 
     def trigger_follow_up(self, state: AgentWorkflowState) -> dict:
-        """Dispatches follow-up for complaints approaching SLA deadline."""
+        """Dispatches follow-up and notifications for complaints approaching SLA deadline."""
         if state.get("follow_up_sent"):
             logger.info(
                 "Follow-up already sent for complaint '%s'; skipping duplicate dispatch",
                 state["complaint_id"],
+            )
+            record_agent_event(
+                db=self.db,
+                complaint_id=state["complaint_id"],
+                action="FOLLOW_UP_SKIPPED",
+                reason="Warning SLA detected but follow-up was already sent; skipping duplicate dispatch",
+                previous_status=state.get("current_status"),
+                new_status=state.get("current_status"),
             )
             return {
                 "action_taken": "NONE",
@@ -152,6 +209,20 @@ class AgentNodes:
         record = get_monitoring_record(self.db, state["complaint_id"])
         if record:
             send_follow_up(self.db, record, state.get("remaining_seconds", 0.0))
+            self.notification_service.notify_follow_up(
+                db=self.db,
+                record=record,
+                remaining_seconds=state.get("remaining_seconds", 0.0),
+            )
+
+        record_agent_event(
+            db=self.db,
+            complaint_id=state["complaint_id"],
+            action="FOLLOW_UP_TRIGGERED",
+            reason="SLA warning threshold reached; follow-up dispatched to department",
+            previous_status=state.get("current_status"),
+            new_status=state.get("current_status"),
+        )
 
         logger.info("Follow-up action executed for complaint '%s'", state["complaint_id"])
         return {
@@ -175,6 +246,15 @@ class AgentNodes:
             "Complaint '%s' rechecked: current status is '%s'",
             state["complaint_id"],
             current_status,
+        )
+
+        record_agent_event(
+            db=self.db,
+            complaint_id=state["complaint_id"],
+            action="RECHECK",
+            reason=f"Complaint state rechecked; current status is '{current_status}'",
+            previous_status=state.get("current_status"),
+            new_status=current_status,
         )
 
         if is_resolved:
@@ -213,6 +293,14 @@ class AgentNodes:
                 "Complaint '%s' breached SLA but is already escalated; no duplicate escalation",
                 state["complaint_id"],
             )
+            record_agent_event(
+                db=self.db,
+                complaint_id=state["complaint_id"],
+                action="ESCALATION_SKIPPED",
+                reason="SLA breached but complaint is already escalated; no duplicate escalation",
+                previous_status=state.get("current_status"),
+                new_status=state.get("current_status"),
+            )
             return {
                 "already_escalated": True,
                 "decision_reason": "SLA breached but complaint is already escalated; no duplicate escalation.",
@@ -225,14 +313,30 @@ class AgentNodes:
         }
 
     def escalate_complaint_node(self, state: AgentWorkflowState) -> dict:
-        """Executes complaint escalation transition."""
+        """Executes complaint escalation transition, notifies authority, and logs event."""
         record = get_monitoring_record(self.db, state["complaint_id"])
+        prev_status = state.get("previous_status", state.get("current_status"))
+
         if record:
             escalate_complaint(self.db, record)
+            self.notification_service.notify_escalation(
+                db=self.db,
+                record=record,
+                reason="SLA deadline expired without resolution",
+            )
+
+        record_agent_event(
+            db=self.db,
+            complaint_id=state["complaint_id"],
+            action="ESCALATION_TRIGGERED",
+            reason="SLA breached and complaint was not previously escalated; complaint escalated",
+            previous_status=prev_status,
+            new_status="Escalated",
+        )
 
         logger.info("Complaint '%s' successfully escalated", state["complaint_id"])
         return {
-            "previous_status": state.get("previous_status", state.get("current_status")),
+            "previous_status": prev_status,
             "current_status": "Escalated",
             "agent_state": "ESCALATED",
             "already_escalated": True,

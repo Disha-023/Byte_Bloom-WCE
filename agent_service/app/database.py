@@ -35,7 +35,7 @@ def get_db() -> Generator[Session, None, None]:
 def init_db() -> None:
     """Initializes and creates all registered SQLAlchemy tables in the database."""
     # Ensure models are imported so they are registered with Base.metadata
-    from .models import complaint_monitoring  # noqa: F401
+    from .models import complaint_monitoring, agent_event  # noqa: F401
     Base.metadata.create_all(bind=engine)
 
 
