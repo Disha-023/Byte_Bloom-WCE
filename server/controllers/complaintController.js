@@ -153,8 +153,59 @@ export const getComplaintById = async (req, res, next) => {
   }
 };
 
+const VALID_STATUSES = ['Pending', 'Assigned', 'In Progress', 'Resolved', 'Escalated'];
+
+/**
+ * Controller to update the operational status of a complaint.
+ * Validates the status against application conventions and updates PostgreSQL.
+ */
+export const updateComplaintStatus = async (req, res, next) => {
+  try {
+    const { complaintId } = req.params;
+    const { status } = req.body || {};
+
+    if (!status || typeof status !== 'string' || !status.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Status is required and must be a non-empty string.'
+      });
+    }
+
+    // Match case-insensitively and normalize to canonical casing
+    const normalizedInput = status.trim().toLowerCase();
+    const canonicalStatus = VALID_STATUSES.find(
+      (s) => s.toLowerCase() === normalizedInput
+    );
+
+    if (!canonicalStatus) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status '${status}'. Allowed statuses are: ${VALID_STATUSES.join(', ')}.`
+      });
+    }
+
+    const updatedComplaint = await complaintService.updateComplaintStatus(complaintId, canonicalStatus);
+
+    if (!updatedComplaint) {
+      return res.status(404).json({
+        success: false,
+        message: `Complaint with ID '${complaintId}' not found.`
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      complaint: updatedComplaint
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 export default {
   submitComplaint,
   getComplaints,
-  getComplaintById
+  getComplaintById,
+  updateComplaintStatus
 };
+

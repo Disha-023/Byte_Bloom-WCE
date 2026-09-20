@@ -76,11 +76,79 @@ export const initDb = async () => {
     CREATE INDEX IF NOT EXISTS idx_complaints_created_at ON complaints(created_at DESC);
   `;
 
+  // Step 1: Explicit connectivity test
+  try {
+    await query('SELECT 1');
+  } catch (err) {
+    const maskedUrl = getMaskedDatabaseUrl();
+    if (err.code === '28P01') {
+      console.error(`[PostgreSQL Auth Error] Code 28P01: Password authentication failed for user at ${maskedUrl}.`);
+      console.error(`[PostgreSQL Action] Please configure the correct PostgreSQL credentials in server/.env using DATABASE_URL=postgresql://<user>:<password>@localhost:5432/<database>.`);
+    } else if (err.code === '3D000') {
+      console.error(`[PostgreSQL Config Error] Code 3D000: Target database does not exist at ${maskedUrl}.`);
+      console.error(`[PostgreSQL Action] Please create the database or verify the database name in server/.env DATABASE_URL.`);
+    } else if (err.code === 'ECONNREFUSED') {
+      console.error(`[PostgreSQL Network Error] Connection refused at ${maskedUrl}.`);
+      console.error(`[PostgreSQL Action] Please verify that the PostgreSQL service is running on the configured host and port.`);
+    } else {
+      console.error(`[PostgreSQL Connection Error] ${err.message} (Target: ${maskedUrl})`);
+    }
+    throw err;
+  }
+
+  // Step 2: Schema initialization
   try {
     await query(createTableQuery);
     console.log('[PostgreSQL] Complaints table and indexes verified.');
   } catch (err) {
-    console.warn('[PostgreSQL] Table initialization warning (verify DATABASE_URL):', err.message);
+    console.error('[PostgreSQL Schema Error] Failed to initialize complaints table or indexes:', err.message);
+    throw err;
+  }
+};
+
+/**
+ * Returns a database connection URL with the password masked for safe logging.
+ * @param {string} [url]
+ * @returns {string}
+ */
+export const getMaskedDatabaseUrl = (url = config.databaseUrl) => {
+  try {
+    const cleanUrl = url.replace(/^postgresql\+psycopg:\/\//, 'postgresql://');
+    const parsed = new URL(cleanUrl);
+    if (parsed.password) {
+      parsed.password = '******';
+    }
+    return parsed.toString();
+  } catch {
+    return 'postgresql://***@***/***';
+  }
+};
+
+/**
+ * Checks PostgreSQL connection status and returns structured diagnostic information.
+ * @returns {Promise<{ connected: boolean, code?: string, reason?: string, message?: string }>}
+ */
+export const checkDbHealth = async () => {
+  try {
+    await query('SELECT 1');
+    return { connected: true, error: null };
+  } catch (err) {
+    let reason = 'Connection error';
+    if (err.code === '28P01') {
+      reason = 'Authentication failed (verify username and password in server/.env)';
+    } else if (err.code === '3D000') {
+      reason = 'Database does not exist (verify target database name in server/.env)';
+    } else if (err.code === 'ECONNREFUSED') {
+      reason = 'Connection refused (verify PostgreSQL service is running on the configured port)';
+    } else if (err.code === 'ENOTFOUND') {
+      reason = 'Host not found (verify host in server/.env)';
+    }
+    return {
+      connected: false,
+      code: err.code || null,
+      reason,
+      message: err.message || 'Database unavailable'
+    };
   }
 };
 
@@ -96,7 +164,10 @@ export default {
   pool,
   query,
   initDb,
+  checkDbHealth,
+  getMaskedDatabaseUrl,
   setMockQueryHandler,
   resetMockQueryHandler,
   closePool
 };
+

@@ -146,11 +146,32 @@ export const checkComplaintIdExists = async (complaintId) => {
   return result.rowCount > 0;
 };
 
+/**
+ * Updates the operational status of a complaint in PostgreSQL.
+ * @param {string} complaintId
+ * @param {string} status
+ * @returns {Promise<object|null>} The updated complaint row or null
+ */
+export const updateComplaintStatus = async (complaintId, status) => {
+  const sql = `
+    UPDATE complaints
+    SET
+      status = $1,
+      updated_at = NOW()
+    WHERE complaint_id = $2
+    RETURNING *;
+  `;
+  const result = await query(sql, [status, complaintId]);
+  return result.rows[0] || null;
+};
+
 export default {
   createComplaint,
   updateComplaintWithAi,
   updateComplaintAiFailed,
   getComplaintById,
   getAllComplaints,
-  checkComplaintIdExists
+  checkComplaintIdExists,
+  updateComplaintStatus
 };
+

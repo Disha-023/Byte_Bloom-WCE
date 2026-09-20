@@ -32,10 +32,17 @@ def run_complaint_agent(
     result = run_agent_workflow(db, complaint_id)
 
     if result.get("error"):
+        error_msg = result["error"]
+        if "not found" in error_msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_msg,
+            )
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=result["error"],
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=error_msg,
         )
+
 
     return AgentRunResponse(
         complaint_id=result["complaint_id"],

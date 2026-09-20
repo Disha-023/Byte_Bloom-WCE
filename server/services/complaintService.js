@@ -117,9 +117,21 @@ export const getComplaintById = async (complaintId) => {
   return complaintModel.getComplaintById(complaintId);
 };
 
+/**
+ * Updates the operational status of a complaint in PostgreSQL.
+ * @param {string} complaintId
+ * @param {string} status
+ * @returns {Promise<object|null>}
+ */
+export const updateComplaintStatus = async (complaintId, status) => {
+  return complaintModel.updateComplaintStatus(complaintId, status);
+};
+
 export default {
   generateComplaintId,
   submitComplaint,
   getComplaints,
-  getComplaintById
+  getComplaintById,
+  updateComplaintStatus
 };
+

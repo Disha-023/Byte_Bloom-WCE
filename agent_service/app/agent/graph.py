@@ -7,6 +7,14 @@ from langgraph.graph import StateGraph, START, END
 
 from .state import AgentWorkflowState
 from .nodes import AgentNodes
+from ..services.complaint_data_provider import (
+    ComplaintDataProvider,
+    CentralComplaintApiDataProvider,
+    LocalMonitoringComplaintDataProvider,
+)
+from ..services.monitoring_service import get_monitoring_record
+from ..config import get_settings
+
 
 
 def route_after_resolution(state: AgentWorkflowState) -> str:
@@ -24,8 +32,6 @@ def route_after_sla(state: AgentWorkflowState) -> str:
     if sla_status == "NORMAL":
         return END
     elif sla_status == "WARNING":
-        if state.get("follow_up_sent"):
-            return "check_breach"
         return "trigger_follow_up"
     elif sla_status == "BREACHED":
         return "check_breach"
@@ -55,6 +61,7 @@ def build_agent_graph(
     db: Session,
     current_time: Optional[datetime] = None,
     warning_threshold_percent: Optional[float] = None,
+    data_provider: Optional[ComplaintDataProvider] = None,
 ):
     """
     Constructs and compiles the state-aware LangGraph workflow for complaint SLA monitoring.
@@ -63,6 +70,7 @@ def build_agent_graph(
         db=db,
         current_time=current_time,
         warning_threshold_percent=warning_threshold_percent,
+        data_provider=data_provider,
     )
 
     builder = StateGraph(AgentWorkflowState)
@@ -129,14 +137,26 @@ def run_agent_workflow(
     complaint_id: str,
     current_time: Optional[datetime] = None,
     warning_threshold_percent: Optional[float] = None,
+    data_provider: Optional[ComplaintDataProvider] = None,
 ) -> AgentWorkflowState:
     """
     Executes the compiled LangGraph workflow on a complaint record.
     """
+    if data_provider is None:
+        if get_monitoring_record(db, complaint_id) is not None:
+            data_provider = LocalMonitoringComplaintDataProvider(db)
+        else:
+            settings = get_settings()
+            data_provider = CentralComplaintApiDataProvider(
+                base_url=settings.CENTRAL_COMPLAINT_API_URL,
+                timeout=getattr(settings, "CENTRAL_COMPLAINT_API_TIMEOUT", 5.0),
+            )
+
     graph = build_agent_graph(
         db,
         current_time=current_time,
         warning_threshold_percent=warning_threshold_percent,
+        data_provider=data_provider,
     )
     initial_state: AgentWorkflowState = {
         "complaint_id": complaint_id,
@@ -146,3 +166,5 @@ def run_agent_workflow(
         "is_resolved": False,
     }
     return graph.invoke(initial_state)
+
+

@@ -3,7 +3,8 @@ import { upload } from '../middleware/uploadMiddleware.js';
 import {
   submitComplaint,
   getComplaints,
-  getComplaintById
+  getComplaintById,
+  updateComplaintStatus
 } from '../controllers/complaintController.js';
 
 const router = Router();
@@ -17,4 +18,8 @@ router.get('/', getComplaints);
 // GET /api/complaints/:complaintId - Fetch single complaint by business ID
 router.get('/:complaintId', getComplaintById);
 
+// PATCH /api/complaints/:complaintId/status - Update complaint operational status
+router.patch('/:complaintId/status', updateComplaintStatus);
+
 export default router;
+

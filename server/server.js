@@ -77,9 +77,14 @@ const isTestEnv =
   process.argv.some((arg) => arg.includes('test'));
 
 if (!isTestEnv) {
-  initDb().catch((err) => {
-    console.warn('[PostgreSQL] Could not initialize database schema at startup:', err.message);
-  });
+  initDb()
+    .then(() => {
+      console.log('[PostgreSQL] Database readiness verified successfully.');
+    })
+    .catch((err) => {
+      console.error('[PostgreSQL CRITICAL] Database initialization failed. Backend server will run in degraded mode.');
+      console.error(`[PostgreSQL CRITICAL] Cause: ${err.message}`);
+    });
 
   app.listen(config.port, () => {
     console.log(`[Smart Civic Server] Server running in ${config.nodeEnv} mode on port ${config.port}`);
@@ -87,5 +92,6 @@ if (!isTestEnv) {
     console.log(`[Smart Civic Server] Complaints API: http://localhost:${config.port}/api/complaints`);
   });
 }
+
 
 export default app;
